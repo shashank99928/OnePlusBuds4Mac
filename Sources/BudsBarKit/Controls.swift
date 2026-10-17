@@ -506,7 +506,7 @@ struct NoiseControlSection: View {
             }
 
             if !canSwitchModes {
-                ControlsNotReady(text: "Getting controls ready…")
+                ControlsNotReady(text: "Reading the noise-control setting…")
             }
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: buds.mode)
@@ -682,7 +682,7 @@ struct SoundSection: View {
             BassWaveControl(buds: buds)
 
             if !enabled {
-                ControlsNotReady(text: "Getting controls ready…")
+                ControlsNotReady(text: "Reading the sound settings…")
             }
         }
         .disabled(!enabled)
@@ -714,7 +714,7 @@ struct FindMyEarbudsSection: View {
             }
 
             if !enabled {
-                ControlsNotReady(text: "Getting controls ready…")
+                ControlsNotReady(text: "Waiting for the controls to be ready…")
             }
         }
         .disabled(!enabled)

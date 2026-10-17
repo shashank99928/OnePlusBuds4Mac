@@ -162,7 +162,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // instead, by watching for a click outside.
         popover.behavior = .applicationDefined
         popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: PanelView(buds: buds))
+        // `.applicationDefined` also switches off the framework's own key handling, so Escape
+        // no longer closed the panel — a popover that traps the pointer has to be dismissable
+        // from the keyboard. `onExitCommand` is SwiftUI's Escape; the click-outside monitor
+        // below still handles the mouse.
+        popover.contentViewController = NSHostingController(
+            rootView: PanelView(buds: buds).onExitCommand { [weak self] in
+                self?.popover.performClose(nil)
+            })
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.target = self

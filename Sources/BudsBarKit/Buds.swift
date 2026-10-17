@@ -23,13 +23,23 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// there is nothing to connect to and a radio session would only make it slow.
     static let isRenderingSnapshots = CommandLine.arguments.contains("--render-snapshots")
 
-    /// True when the process is doing something other than being the app. A protocol check
-    /// and a snapshot render both construct `Buds`, and neither wants a paging attempt, a
-    /// poll timer and an RFCOMM session behind it.
+    /// True inside a test process.
+    ///
+    /// A test run must not open a control channel. The channel is exclusive, so `swift test`
+    /// on a machine with the buds connected would take it away from the app that is using it
+    /// (or from the phone app), and any pixel comparison would then depend on whatever the
+    /// hardware happened to answer. The test process carries no command-line flags of its own,
+    /// which is why this cannot be folded into the checks above.
+    static let isTesting = NSClassFromString("XCTestCase") != nil
+        || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+    /// True when the process is doing something other than being the app. A protocol check, a
+    /// snapshot render and a test run all construct `Buds`, and none of them wants a paging
+    /// attempt, a poll timer and an RFCOMM session behind it.
     ///
     /// `isHarvesting` is deliberately not included: capturing fixtures is the one thing that
     /// genuinely needs the radio.
-    static let isDetached = isSelfChecking || isRenderingSnapshots
+    static let isDetached = isSelfChecking || isRenderingSnapshots || isTesting
 
     /// Drives a fixed sequence so a raw-frame capture contains one clean example of every
     /// frame type. Fixtures are captured, never typed: every hand-written one so far has had
@@ -455,6 +465,12 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     }
 
     func refreshConnectionState() {
+        // A detached instance has no device and no radio: this is a check run, a snapshot
+        // render, or a fixture capture before the link is up. Re-reading the link state here
+        // would compute "false" from a nil device and wipe the state that was just seeded —
+        // which is exactly what happened, and made the golden images differ between renders
+        // depending on whether `onAppear` had fired yet.
+        guard !Self.isDetached else { return }
         syncName()
         // A live stream outranks everything else. `isConnected()` under-reports badly — it
         // goes false while the headset link is plainly still up, because the audio side holds
@@ -961,15 +977,29 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     // MARK: - Snapshots
 
+    /// The states the snapshot renderer draws. Not every state a live session can be in —
+    /// just the ones that are worth a picture, which is to say the ones whose layout is not
+    /// obvious and could silently break.
+    enum SnapshotState {
+        /// Link up, everything read: the steady state.
+        case connected
+        /// Link up but the control channel is not open yet, so nothing has been read. This is
+        /// the state a person sees for the first second or two after the buds connect, and
+        /// the one that is easiest to leave full of empty boxes and dashes that read as
+        /// faults. It is rendered on purpose rather than assumed to be fine.
+        case warmingUp
+    }
+
     /// Fills in the state a live session would have produced, for the snapshot renderer.
     ///
     /// The values are the decoded captures from `FixtureCorpus`, fed through the very same
     /// `apply(_ frame:)` the radio goes through — not invented numbers. So a golden image
     /// shows what this app draws against this unit, and a decoder change that altered what
     /// the corpus means would change the images with it rather than leaving them stale.
-    func seedForSnapshot() {
+    func seedForSnapshot(_ state: SnapshotState = .connected) {
         name = Buds.fallbackName
         isConnected = true
+        guard state == .connected else { return }
         isControlChannelOpen = true
         for capture in FixtureCorpus.frames {
             var buffer = capture.bytes

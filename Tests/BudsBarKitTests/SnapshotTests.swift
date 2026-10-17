@@ -2,13 +2,16 @@ import AppKit
 import XCTest
 @testable import BudsBarKit
 
-/// Golden images for the two surfaces, at the two widths they are actually used at.
+/// Golden images for the app's surfaces, at the widths they are actually used at.
 ///
 /// The panel is a fixed 340pt column and the window has a minimum width, and both are exactly
 /// where a layout breaks: the four noise-control pills needed 62pt each and had 41.5pt in the
 /// panel, so the label clipped to "cancell…" and nothing failed. A golden image is the only
 /// check that catches that class of mistake, because the wrong output is perfectly valid
 /// SwiftUI — it just looks wrong.
+///
+/// The goldens live in `docs/assets`, which is also the website's asset directory, so the
+/// screenshot a visitor sees is byte-for-byte the one this test verifies.
 ///
 /// Regenerate deliberately, and read the diff, with:
 ///
@@ -21,10 +24,11 @@ import XCTest
 final class SnapshotTests: XCTestCase {
 
     private var goldenDirectory: URL {
-        URL(fileURLWithPath: #filePath)
+        URL(fileURLWithPath: #filePath)             // Tests/BudsBarKitTests/SnapshotTests.swift
             .deletingLastPathComponent()            // Tests/BudsBarKitTests
             .deletingLastPathComponent()            // Tests
-            .appendingPathComponent("Fixtures/Snapshots")
+            .deletingLastPathComponent()            // repository root
+            .appendingPathComponent("docs/assets")
     }
 
     func testSurfacesMatchTheirGoldenImages() throws {
@@ -46,9 +50,9 @@ final class SnapshotTests: XCTestCase {
             XCTAssertLessThan(
                 difference.ratio, 0.005,
                 """
-                \(surface.rawValue) no longer matches Tests/Fixtures/Snapshots/\
-                \(surface.rawValue).png: \(difference.pixels) of \(difference.total) pixels \
-                differ (\(String(format: "%.2f", difference.ratio * 100))%). \
+                \(surface.rawValue) no longer matches docs/assets/\(surface.rawValue).png: \
+                \(difference.pixels) of \(difference.total) pixels differ \
+                (\(String(format: "%.2f", difference.ratio * 100))%). \
                 If the change is intended, regenerate with UPDATE_SNAPSHOTS=1 and read the diff.
                 """)
         }

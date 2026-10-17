@@ -4,9 +4,17 @@ Native SwiftUI controller for **OnePlus Buds 4** on macOS — a real, resizable 
 plus a menu-bar item, in the style of a modern control panel. No Electron, no helper
 daemon, no network.
 
-![The main window](docs/screenshots/window.png)
+There is a website, published from `docs/` with GitHub Pages, at
+<https://shashank99928.github.io/OnePlusBuds4Mac/>. The site is `docs/index.html` and
+`docs/styles.css` with the images in `docs/assets/`, plus `robots.txt`, `sitemap.xml` and a
+`404.html`; it has an FAQ section with `FAQPage` structured data.
+
+![The main window](docs/assets/window.jpg)
 
 ## Features
+
+The feature set is at parity with the phone app: everything the OnePlus Buds app drives over
+this channel is here.
 
 - **Noise control** — Off, Noise cancellation (Low / Moderate / High / Auto), Transparency,
   and Adaptive, laid out as the phone app lays them out. Switching is a real write to the
@@ -19,7 +27,7 @@ daemon, no network.
   or being held.
 - **Find my earbuds** — rings the left, the right, or both.
 - **Earbud controls** — remaps the media touch gestures (double tap, triple tap, touch and
-  hold, slide) to what the buds actually support.
+  hold, slide) to what the buds actually support. Only the media context is remappable.
 - **Firmware readout** and whether a custom EQ profile is saved.
 - **Connect / disconnect** — power the buds from the app.
 - **Launch at login** — optional, so the app is already running when the buds connect.
@@ -28,23 +36,45 @@ daemon, no network.
 
 ## Screens
 
-| Main window | Menu bar |
-| --- | --- |
-| ![Main window](docs/screenshots/window.png) | ![Menu-bar popover](docs/screenshots/panel.png) |
+| Main window | Menu bar | Menu bar, just connected |
+| --- | --- | --- |
+| ![Main window](docs/assets/window.jpg) | ![Menu-bar popover](docs/assets/panel.jpg) | ![Menu-bar popover the moment after connecting](docs/assets/panel-warming.jpg) |
 
 The window is resizable and reachable from the Dock. The menu-bar item is the quick-glance
 version: the controls you reach for while listening, and find-my-earbuds. It disappears along
 with the buds when they're away; the window and Dock icon stay, so the app is never
 unreachable — and the popover's "…" menu opens the window in the meantime.
 
-Both images are generated from the app itself (`--render-snapshots`, below), so they cannot
-drift from what the app draws.
+The third image is the popover about a second after connecting, before the buds have answered.
+It is drawn deliberately, because that state is the easiest one to leave as a grid of dashes
+that read as faults, and the least likely to be looked at by hand.
+
+All three images are generated from the app itself (`--render-snapshots`, below), so they
+cannot drift from what the app draws. They are the same files the snapshot test compares.
 
 ## Requirements
 
 - macOS 26 or later
 - OnePlus Buds 4 already paired with the Mac (System Settings → Bluetooth)
 - To build: Xcode, or just the Command Line Tools
+
+## Supported platforms
+
+What works, and what was actually built and tested:
+
+| Platform | Status | Notes |
+| --- | --- | --- |
+| macOS 26 (Tahoe) or later | Supported | targets the macOS 26 SDK, no back-deployment |
+| Apple silicon | Supported | the release is a native arm64 build (M1 and later); ad-hoc signed, so the first launch needs right-click → Open |
+| Intel Macs | Build from source | macOS 26 still runs on a few Intel models, but the release is arm64-only; `./build.sh` on the machine produces a working native binary |
+| macOS 15 and earlier | Not supported | built against the macOS 26 SDK with no back-deployment |
+| OnePlus Buds 4 | Supported | the model this was built and tested against |
+| Other OPPO / realme earbuds | Untested | they share parts of the protocol and the same service, so it may work, but nothing was verified on them |
+| iPhone, Android, Windows, Linux | Not applicable | this is the Mac side only; it does not replace the phone app |
+
+Two things hold regardless of platform: the control channel is exclusive, so only one of this
+app and the phone app can hold the buds at a time (whoever holds it wins), and the buds have to
+be paired in System Settings → Bluetooth before the app can find them.
 
 ## Install
 
@@ -82,21 +112,30 @@ Everything here is checked against something that can disagree with it, because 
 this app that matter are the parts where being wrong is silent — the buds accept any write and
 validate nothing, so a wrong command produces no error, just the wrong behaviour.
 
-- **The buds' own readbacks.** `--selfcheck` exercises the wire format, but the hardware is
-  the only thing that settles what a write did. Every mode and level was set and read back;
-  when this app sent `0x02` for Transparency the firmware stored Noise cancellation, which is
-  how that bug was found.
+The app is `BudsBarKit`, a library, plus a four-line executable at
+`Sources/OnePlusBuds4/main.swift`. That split is what lets `swift test` reach the protocol and
+the views without launching the app.
+
+- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 122 checks, but the
+  hardware is the only thing that settles what a write did. Every mode and level was set and
+  read back; when this app sent `0x02` for Transparency the firmware stored Noise cancellation,
+  which is how that bug was found.
 - **A captured fixture corpus.** `Tests/Fixtures/buds4-frames.hex` holds 23 raw RFCOMM frames
   taken off the wire, with both length fields intact. Fixtures are *captured*, never typed:
   the self-check used to crash at launch because one hand-written fixture's `len` varint
   disagreed with its own payload-length field, and the parser was right to reject it. Nothing
   enters the corpus except through `Tools/freeze-fixtures.sh` from a real capture.
-- **`swift test`.** The checks are tests, not a launch hook: the corpus invariant, the crash
-  as a regression test, the setter ids against the acknowledgements the hardware sends, and
-  the property that every mode the UI can offer decodes back to itself.
-- **Golden images, at the widths the surfaces really render at.** 340pt is the popover; if a
-  change makes the noise-control labels clip there, a test fails rather than someone noticing
-  three commits later. Regenerate deliberately with
+- **`swift test`.** 10 tests across two classes — 8 protocol tests and 2 snapshot tests. The
+  checks are tests, not a launch hook: the corpus invariant, the crash as a regression test,
+  the setter ids against the acknowledgements the hardware sends, and the property that every
+  mode the UI can offer decodes back to itself.
+- **Golden images, at the widths the surfaces really render at.** 340pt is the popover and
+  470pt is the window column; if a change makes the noise-control labels clip at either, a
+  test fails rather than someone noticing three commits later. The three goldens —
+  `window.png`, `panel.png` and `panel-warming.png` — are location-recorded in
+  `Tests/BudsBarKitTests/SnapshotTests.swift` and compared per pixel against a fresh render.
+  They live in the website's asset directory (`docs/assets`) on purpose, so the screenshot a
+  visitor sees is byte-for-byte the one the test verifies. Regenerate deliberately with
   `UPDATE_SNAPSHOTS=1 swift test --filter SnapshotTests` and read the diff.
 - **A non-zero exit.** `./build.sh` runs `--selfcheck` against the release binary and fails
   the build if a check does not pass.
@@ -104,7 +143,7 @@ validate nothing, so a wrong command produces no error, just the wrong behaviour
 ```sh
 swift test                                        # protocol checks and golden images
 ./build.sh                                        # builds, then runs --selfcheck
-swift .build/debug/OnePlusBuds4 --render-snapshots docs/screenshots
+swift .build/debug/OnePlusBuds4 --render-snapshots   # -> docs/assets
 ```
 
 ## What is not verified
@@ -161,15 +200,21 @@ source — the app identifies the buds by the `oppointeraction` service they adv
 
 ## Generated artwork
 
-The icon, the disk-image background and the screenshots are generated, not hand-drawn, so they
-can be regenerated after a design change:
+The icon, the disk-image background, the screenshots and the website's art are generated, not
+hand-drawn, so they can be regenerated after a design change:
 
 ```sh
-swift Tools/make-icon.swift             # -> Resources/AppIcon.icns
+swift Tools/make-icon.swift             # -> Resources/AppIcon.icns, docs/assets/{icon,favicon}.png
 swift Tools/make-dmg-background.swift   # -> Resources/dmg-background{,@2x}.png
-swift .build/debug/OnePlusBuds4 --render-snapshots docs/screenshots
+swift .build/debug/OnePlusBuds4 --render-snapshots
+                                        # -> docs/assets/{window,panel,panel-warming}.png
+swift Tools/make-site-assets.swift      # -> docs/assets/*.jpg, hero.jpg, og.png
 ./Tools/freeze-fixtures.sh              # re-freeze the fixture corpus from the .hex record
 ```
+
+`--render-snapshots` takes an optional directory and defaults to `docs/assets` — the goldens'
+own directory — and draws the three surfaces and exits. Because the images the README shows
+and the images the test compares are the same files, there is no second copy to go stale.
 
 All outputs are committed, so `./build.sh` and `./make-dmg.sh` work without running them.
 
@@ -208,19 +253,27 @@ and restores what it found. It only ever writes values from the allow-listed set
 | `Sources/BudsBarKit/App.swift` | Scenes, the menu-bar item, the window bridge, the entry point |
 | `Sources/BudsBarKit/Buds.swift` | Bluetooth state and the vendor control channel |
 | `Sources/BudsBarKit/Protocol.swift` | `oppointeraction` wire format, and the self-check |
-| `Sources/BudsBarKit/FixtureCorpus.swift` | The captured frames, frozen (generated) |
-| `Sources/BudsBarKit/Snapshots.swift` | Renders both surfaces for the README and the goldens |
-| `Sources/BudsBarKit/Theme.swift` | Colours and the shared surface styling |
 | `Sources/BudsBarKit/Controls.swift` | Reusable controls shared by the window and popover |
+| `Sources/BudsBarKit/Theme.swift` | Colours and the shared surface styling |
 | `Sources/BudsBarKit/MainWindowView.swift` | The main window |
 | `Sources/BudsBarKit/PanelView.swift` | The menu-bar popover |
+| `Sources/BudsBarKit/FloatingBatteryView.swift` | The AirPods-style connect popup |
+| `Sources/BudsBarKit/FloatingPanelController.swift` | Positions and shows that popup |
+| `Sources/BudsBarKit/Snapshots.swift` | Renders the three surfaces for the goldens and `--render-snapshots` |
+| `Sources/BudsBarKit/FixtureCorpus.swift` | The captured frames, frozen (generated) |
 | `Sources/BudsBarKit/LaunchAtLogin.swift` | `SMAppService`-backed launch-at-login |
-| `Sources/OnePlusBuds4/main.swift` | The executable: one call into the library |
+| `Sources/OnePlusBuds4/main.swift` | The whole executable: one call into the library |
+| `Tests/BudsBarKitTests/ProtocolTests.swift` | The protocol checks, as tests |
+| `Tests/BudsBarKitTests/SnapshotTests.swift` | The golden-image comparison; the goldens are recorded here |
 | `Tests/Fixtures/buds4-frames.hex` | The capture of record |
-| `Tests/Fixtures/Snapshots/` | Golden images at 340pt and 470pt |
-| `Tests/BudsBarKitTests/` | The protocol checks and the golden-image comparison |
-| `Tools/sniff.swift` | Read-only RFCOMM recon logger (development) |
+| `docs/index.html` | The website, published from `docs/` with GitHub Pages |
+| `docs/styles.css` | The website's styling |
+| `docs/assets/` | The goldens and their web JPEG derivatives, plus `hero.jpg`, `og.png`, `icon.png`, `favicon.png` |
 | `Tools/freeze-fixtures.sh` | Regenerates the frozen corpus from the capture |
+| `Tools/make-icon.swift` | Renders the app icon, the `.icns` and the web icon |
+| `Tools/make-site-assets.swift` | Derives the website's JPEGs, hero crop and social card from the goldens |
+| `Tools/make-dmg-background.swift` | Renders the disk-image background |
+| `Tools/sniff.swift` | Read-only RFCOMM recon logger (development) |
 
 ## License
 

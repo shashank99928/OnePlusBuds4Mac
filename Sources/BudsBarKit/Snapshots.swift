@@ -20,39 +20,53 @@ extension EnvironmentValues {
     }
 }
 
-/// Renders the app's two surfaces to PNG at the widths they are actually used at.
+/// Renders the app's surfaces to PNG at the widths they are actually used at.
 ///
-/// Two jobs, one implementation. `--render-snapshots` writes the images the README shows, and
-/// `SnapshotTests` compares the same images against committed goldens — so a padding change
-/// that makes the 340pt panel clip fails a test instead of being noticed by eye three commits
-/// later. Exact widths because that is the whole point: the panel is a fixed 340pt column and
-/// the window has a minimum, and both are where a layout breaks.
+/// Two jobs, one implementation. `--render-snapshots` writes the images the README and the
+/// website show, and `SnapshotTests` compares those same files as golden images — so a padding
+/// change that makes the 340pt panel clip fails a test instead of being noticed by eye three
+/// commits later. Exact widths because that is the whole point: the panel is a fixed 340pt
+/// column and the window has a minimum, and both are where a layout breaks.
+///
+/// The images live in `docs/assets`, which is the site's asset directory, rather than in
+/// `Tests/`: the picture a visitor sees and the picture the test verifies are then the same
+/// file, so there is no second copy to drift. The test fails if one no longer matches what the
+/// app draws.
 ///
 /// The views are drawn from a `Buds` seeded with the decoded fixture corpus (see
 /// `seedForSnapshot`), so the images show real readings from this hardware rather than
 /// plausible-looking invented ones.
 ///
 /// Known limitation: `ImageRenderer` draws SwiftUI's own primitives, not AppKit-backed
-/// controls. A `Menu` or a `Toggle` inside a rendered view comes out blank. The golden images
-/// therefore cover layout, typography and colour — which is what silently breaks — and not the
-/// contents of a menu.
+/// controls. A `Menu` or a `Toggle` inside a rendered view comes out blank, which is why those
+/// controls draw a static label while `isRenderingSnapshot` is set. The golden images therefore
+/// cover layout, typography and colour — which is what silently breaks — and not the contents
+/// of a menu.
 enum Snapshots {
     enum Surface: String, CaseIterable {
-        /// The menu-bar popover, exactly as wide as it is on screen.
-        case panel
         /// The main window's scrolling column at the width the README shows it.
         case window
+        /// The menu-bar popover, exactly as wide as it is on screen.
+        case panel
+        /// The same popover in the first second after connecting, before anything has been
+        /// read off the buds. Rendered because it is the state most likely to be left as a
+        /// grid of dashes that read as faults, and the least likely to be looked at by hand.
+        case panelWarming = "panel-warming"
+
+        var state: Buds.SnapshotState {
+            self == .panelWarming ? .warmingUp : .connected
+        }
 
         var width: CGFloat {
             switch self {
-            case .panel: return 340
+            case .panel, .panelWarming: return 340
             case .window: return 470
             }
         }
 
         @MainActor func content(_ buds: Buds) -> AnyView {
             switch self {
-            case .panel:
+            case .panel, .panelWarming:
                 // `PanelView` brings its own background and surface.
                 return AnyView(PanelView(buds: buds))
             case .window:
@@ -73,7 +87,7 @@ enum Snapshots {
     @MainActor
     static func image(_ surface: Surface) -> NSImage? {
         let buds = Buds()
-        buds.seedForSnapshot()
+        buds.seedForSnapshot(surface.state)
         let renderer = ImageRenderer(
             content: surface.content(buds)
                 .frame(width: surface.width)
@@ -116,10 +130,14 @@ enum Snapshots {
         }
     }
 
-    /// `--render-snapshots [directory]` — draws both surfaces and exits.
+    /// `--render-snapshots [directory]` — draws every surface and exits.
     ///
     /// Handled from `BudsBar.launch()` before anything else, so no window, no status item and
     /// no radio session is ever created for it.
+    ///
+    /// The default directory is the golden directory on purpose: the images the README shows
+    /// and the images the test compares are then the same files, so there is no second copy to
+    /// go stale, and `swift test` fails if one of them no longer matches what the app draws.
     @MainActor
     static func renderAndExit() -> Never {
         let arguments = CommandLine.arguments
@@ -129,7 +147,7 @@ enum Snapshots {
                 return nil
             }
             return arguments[next]
-        } ?? "docs/screenshots"
+        } ?? "docs/assets"
 
         do {
             try write(to: URL(fileURLWithPath: path))
