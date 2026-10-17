@@ -39,8 +39,8 @@ stay, so the app is never unreachable.
 
 ### Disk image
 
-Download `OnePlus Buds 4.dmg` from the [releases](../../releases), open it, and drag the
-app onto the Applications shortcut.
+Download the DMG from [Releases](../../releases/latest), open it, and drag the app onto the
+Applications shortcut.
 
 The build is ad-hoc signed, so the first launch on a Mac that has never seen it needs
 **right-click → Open**. After that it opens normally. (See [Releasing](#releasing) for how
