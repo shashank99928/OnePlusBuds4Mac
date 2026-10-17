@@ -6,5 +6,12 @@ Package.resolved
 # Assembled app bundles
 *.app
 
+# Packaged installers
+dist/
+*.dmg
+
+# Intermediate icon artwork (the packed .icns is committed)
+Resources/AppIcon.iconset/
+
 # macOS
 .DS_Store
