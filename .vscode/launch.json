@@ -4,21 +4,21 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:tws application}",
-            "name": "Debug BudsBar",
-            "target": "BudsBar",
+            "cwd": "${workspaceFolder}",
+            "name": "Debug OnePlusBuds4",
+            "target": "OnePlusBuds4",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug BudsBar"
+            "preLaunchTask": "swift: Build Debug OnePlusBuds4"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:tws application}",
-            "name": "Release BudsBar",
-            "target": "BudsBar",
+            "cwd": "${workspaceFolder}",
+            "name": "Release OnePlusBuds4",
+            "target": "OnePlusBuds4",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release BudsBar"
+            "preLaunchTask": "swift: Build Release OnePlusBuds4"
         }
     ]
 }

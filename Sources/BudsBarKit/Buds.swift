@@ -74,7 +74,11 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// The EQ preset is the custom profile, when one exists. Read-only: the upload format is
     /// decoded but has never been transmitted by anyone, and there is no documented way to
     /// delete a profile, so the app does not write one into the buds' flash.
-    var hasCustomEQProfile = false
+    ///
+    /// Tri-state, like every other reading: nil means the buds have not been asked, or the one
+    /// `0x22` request went unanswered, and the About row must say "—" rather than "None". A
+    /// definite `false` is a reply that said no profile is stored.
+    var hasCustomEQProfile: Bool?
     /// BassWave level, −5…+5.
     var bassWave: Int?
     /// Firmware string, e.g. `1,2,138,2,2,138,3,1,01,3,2,105`.
@@ -125,7 +129,12 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private var isAutoConnecting = false
 
     /// False when no paired device speaks the control protocol — nothing to drive.
-    var isPaired: Bool { device != nil }
+    var isPaired: Bool { isPairedOverride ?? (device != nil) }
+
+    /// Snapshot-only: `seedForSnapshot` has no real `device`, so it forces pairing rather than
+    /// rendering a state — connected but unpaired — that a live session cannot be in. nil in
+    /// every live session, where pairing is whether a device was discovered.
+    var isPairedOverride: Bool?
 
     /// Called whenever `isAvailable` or `isConnected` may have moved, so the status item can
     /// insert, remove, or recolour itself. A plain callback rather than observation: the
@@ -147,17 +156,37 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     struct Placement {
         var left: BudsProtocol.BudPlacement?
         var right: BudsProtocol.BudPlacement?
+        /// Where the case reported itself. Not a bud, but the wear report names the slot, and
+        /// it is the only evidence the app has that a case exists at all — the battery report
+        /// drops the case out entirely while it is asleep, which is most of the time.
+        var enclosure: BudsProtocol.BudPlacement?
 
         subscript(slot: BudsProtocol.BatterySlot) -> BudsProtocol.BudPlacement? {
-            get { slot == .left ? left : slot == .right ? right : nil }
+            get {
+                switch slot {
+                case .left: return left
+                case .right: return right
+                case .enclosure: return enclosure
+                }
+            }
             set {
                 switch slot {
                 case .left: left = newValue
                 case .right: right = newValue
-                case .enclosure: break   // the case is not a bud and has no placement
+                case .enclosure: enclosure = newValue
                 }
             }
         }
+    }
+
+    /// Whether a case is actually there.
+    ///
+    /// The wear report is the only evidence while the case is asleep — a sleeping case drops
+    /// out of the battery report entirely, which is its usual state — but a slot reported as
+    /// `.notPresent` means there is no case, not an unknown one, so it does not count. The two
+    /// surfaces share this so neither invents a case the other has decided is absent.
+    var isCaseReported: Bool {
+        (placement.enclosure.map { $0 != .notPresent } ?? false) || battery.enclosure != nil
     }
 
     // MARK: - Private
@@ -168,6 +197,17 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private var disconnectObserver: IOBluetoothUserNotification?
     /// True while `openControlChannel` has work in flight. See the note there.
     private var isOpening = false
+
+    /// State for the `BUDSBAR_HARVEST=1` recon sweep.
+    ///
+    /// The sweep writes to real hardware, so it is guarded rather than assumed: `harvestHasRun`
+    /// stops a reconnect mid-sweep from starting a second, overlapping one (it is scheduled per
+    /// channel open), and `harvestWriteFailures` is why the sweep does not simply `exit(0)` — a
+    /// write that failed during the restore would otherwise leave the user's settings moved and
+    /// report success.
+    private var harvestHasRun = false
+    private var harvestWriteFailures = 0
+    private var harvestReadAttempts = 0
 
     /// Until when the link is taken as up on the strength of a positive event, whatever the
     /// `isConnected()` query says. The query lags several seconds behind an openConnection
@@ -517,7 +557,11 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             eqPreset = nil
             bassWave = nil
             touchRules = []
-            hasCustomEQProfile = false
+            hasCustomEQProfile = nil
+            // The firmware string belongs to the connection too: without this, a paired-but-
+            // disconnected panel (or one wearing a different device's name) keeps showing the
+            // version of buds it is no longer talking to.
+            firmware = nil
         }
     }
 
@@ -569,6 +613,12 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
             DispatchQueue.main.async {
                 defer { self.isOpening = false }
+                // A switch-off can land while the SDP query above is still in flight. Honour it:
+                // opening here would command buds the user just turned off, and `disconnect()`
+                // has already decided this channel should not exist. The completion handler has
+                // the same guard, for the race it cannot see — a switch-off arriving between this
+                // call and its callback.
+                guard !self.isSwitchedOff, self.channel == nil else { return }
                 var opened: IOBluetoothRFCOMMChannel?
                 let result = device.openRFCOMMChannelAsync(
                     &opened, withChannelID: channelID, delegate: self)
@@ -659,6 +709,13 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     @discardableResult
     private func send(_ packet: [UInt8]) -> Bool {
         guard let channel, isControlChannelOpen else { return false }
+        // `writeAsync` takes a `UInt16` length and a protocol frame is tens of bytes, but the
+        // conversion traps rather than truncating, so a caller that ever exceeded it would take
+        // the process down instead of getting the `false` every other failure returns.
+        guard packet.count <= Int(UInt16.max) else {
+            lastError = "That command is too large to send."
+            return false
+        }
         var bytes = packet
         let result = bytes.withUnsafeMutableBytes { raw in
             channel.writeAsync(raw.baseAddress, length: UInt16(raw.count), refcon: nil)
@@ -667,6 +724,11 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             lastError = "Couldn't send a command to the earbuds."
             return false
         }
+        // A command going out is proof the condition behind a write error has passed: the
+        // channel is up and taking writes. Without this, one transient `writeAsync` failure
+        // left its row on both surfaces until a non-auto connect or a fresh channel open, long
+        // after the link had recovered.
+        lastError = nil
         return true
     }
 
@@ -676,6 +738,16 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         guard error == kIOReturnSuccess else {
             lastError = "Couldn't open the earbuds' control channel."
             self.channel = nil
+            return
+        }
+        // The switch-off raced the open. Close rather than handshake: the handshake is a write, and
+        // writing to buds the user just turned off is the one thing the switch exists to prevent.
+        // `closeControlChannel` has already decided this channel should not exist; this undoes the
+        // part of the open that was already in flight when it did.
+        if isSwitchedOff {
+            channel?.close()
+            self.channel = nil
+            isControlChannelOpen = false
             return
         }
         isControlChannelOpen = true
@@ -715,6 +787,26 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// which would silently move a user's settings. It runs only under `BUDSBAR_HARVEST=1`,
     /// and the poll is suspended for the duration so the capture is not interleaved with it.
     private func runHarvest() {
+        // Scheduled from every channel open, so a reconnect mid-sweep would otherwise start a
+        // second sweep on top of the first, with two restore sequences interleaved.
+        guard !harvestHasRun else { return }
+
+        // Nothing is moved until the buds have actually been read. The sweep writes, and its
+        // restore replays what it found — with no readings, "what it found" is nil and the
+        // restore writes off / balanced / 0, silently moving the user's settings. That is
+        // precisely what it must not do, so wait for the first poll. Bounded, so buds that never
+        // answer cannot spin here forever.
+        if mode == nil, ancLevel == nil, eqPreset == nil, bassWave == nil {
+            harvestReadAttempts += 1
+            guard harvestReadAttempts <= 10 else {
+                testLog("HARVEST aborted: the buds have not answered, so there is nothing to restore")
+                exit(2)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.runHarvest() }
+            return
+        }
+        harvestHasRun = true
+
         let readANC = BudsProtocol.encodeRequest(.anc, payload: [0x01, 0x01])
         let readEQ = BudsProtocol.encodeRequest(.eqPreset)
         let readBass = BudsProtocol.encodeRequest(.bassWave)
@@ -771,10 +863,18 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         for (index, step) in steps.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(index) * 2.0) {
                 self.testLog("HARVEST \(step.0) :: \(BudsProtocol.hex(step.1))")
-                _ = self.send(step.1)
+                // A failed write is not cosmetic here: the closing steps put the buds back the
+                // way they were found, and a sweep that cannot write has left the user's settings
+                // moved. Count them rather than exiting as if it worked.
+                if !self.send(step.1) { self.harvestWriteFailures += 1 }
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(steps.count) * 2.0 + 2) {
+            guard self.harvestWriteFailures == 0 else {
+                self.testLog("HARVEST failed: \(self.harvestWriteFailures) writes did not go out, so the "
+                             + "buds may be left in the last state the sweep wrote — restore by hand")
+                exit(1)
+            }
             self.testLog("HARVEST done")
             exit(0)
         }
@@ -901,13 +1001,12 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             bassWave = value
         case .noiseMode(let value):
             if mode != value {
-                FileHandle.standardError.write(
-                    Data("MODE reported \(value.label) 0x\(String(format: "%04x", value.mask))\n".utf8))
+                decodeLog("MODE reported \(value.label) 0x\(String(format: "%04x", value.mask))")
             }
             mode = value
         case .ancLevel(let value):
             if ancLevel != value {
-                FileHandle.standardError.write(Data("LEVEL reported \(value.label)\n".utf8))
+                decodeLog("LEVEL reported \(value.label)")
             }
             ancLevel = value
         case .battery(let slot, let level):
@@ -921,16 +1020,19 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
         case .placement(let slot, let where_):
             guard placement[slot] != where_ else { break }
-            FileHandle.standardError.write(Data("PLACEMENT \(slot) \(where_)\n".utf8))
+            decodeLog("PLACEMENT \(slot) \(where_)")
             placement[slot] = where_
-            // Only on the move into the case, not on every report of it. A bud put away
+            // Only on the move out of use, not on every report of it. A bud put away
             // drops out of the battery report entirely, and an absent slot keeps its last
             // reading — so the reading it had while in use would stand on the panel
             // indefinitely. Clearing it once is enough: an awake case goes on reporting
             // the bud inside it, and the next report fills the value back in within
             // seconds. A case that has gone to sleep reports nothing, which is when the
             // stale number used to sit there, and now the cell honestly reads unknown.
-            if where_.isStowed {
+            // `.notPresent` counts as out of use too: the slot is decodable but was never
+            // seen on hardware, so a bud that goes absent must not keep a full-strength
+            // reading feeding the headline.
+            if !where_.isUsable {
                 switch slot {
                 case .left: battery.left = nil
                 case .right: battery.right = nil
@@ -975,6 +1077,17 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         FileHandle.standardError.write(Data("TEST \(message)\n".utf8))
     }
 
+    /// Live decode trace for a change in mode, level or placement.
+    ///
+    /// Silent in a check, a snapshot render or a test run: those replay the fixture corpus
+    /// through these same decoders, and the lines would read as a wall of errors in a passing
+    /// test log. Not gated on `isTracing` because these three are the changes a person is
+    /// usually looking for when they ask for the trace.
+    private func decodeLog(_ message: String) {
+        guard !Self.isDetached else { return }
+        FileHandle.standardError.write(Data("\(message)\n".utf8))
+    }
+
     // MARK: - Snapshots
 
     /// The states the snapshot renderer draws. Not every state a live session can be in —
@@ -999,17 +1112,19 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     func seedForSnapshot(_ state: SnapshotState = .connected) {
         name = Buds.fallbackName
         isConnected = true
+        // A live connected session is always paired; without this the renderer draws a state
+        // the app cannot be in — connected but "Not paired" — and the power button comes out
+        // disabled on a fully-connected panel.
+        isPairedOverride = true
         guard state == .connected else { return }
         isControlChannelOpen = true
         for capture in FixtureCorpus.frames {
             var buffer = capture.bytes
             for frame in BudsProtocol.drainFrames(from: &buffer) { apply(frame) }
         }
-        // The capture was taken with the buds in the ear and the EQ on a preset; make that
-        // explicit so an empty corpus cannot silently produce an all-placeholder image.
-        if mode == nil { mode = .noiseCancellation }
-        if eqPreset == nil { eqPreset = .balanced }
-        if bassWave == nil { bassWave = 0 }
+        // Nothing is invented on top of the replay. The corpus is the state, and if a capture
+        // ever stopped yielding one of these readings, the UI's own not-yet-read treatment is
+        // what should show — a fabricated default would be a claim the buds never made.
     }
 
     // MARK: - Errors
@@ -1025,4 +1140,14 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         default: return "IOReturn \(code)"
         }
     }
+}
+
+extension BudsProtocol.BudPlacement {
+    /// False for a bud that is stowed in the case or gone absent: neither is a bud *in use*,
+    /// so its chip is dimmed and its last battery reading is dropped rather than feeding the
+    /// headline as though the bud were still in an ear. `.notPresent` (0x00) is decodable but
+    /// was never observed on this hardware, so it is folded in with `.inCase` defensively
+    /// rather than guessed into a fourth behaviour. Used by the model — which clears the
+    /// reading — and by `BatteryChip`, which dims it, so the two cannot disagree.
+    var isUsable: Bool { self == .inEar || self == .outOfCase }
 }

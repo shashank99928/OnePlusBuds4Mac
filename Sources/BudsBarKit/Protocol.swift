@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Noise control
 
@@ -9,7 +10,7 @@ import Foundation
 /// field — it *is* the value.
 ///
 /// An earlier version of this file read that field as a single byte and mapped `0x02` to
-/// Transparency and `0x08` to "Max ANC". Measured against the hardware with `Tools/probe`,
+/// Transparency and `0x08` to "Max ANC". Measured against the hardware with `Tools/sniff.swift`,
 /// those bytes command *Noise cancellation* and *Off* respectively, so two of the three
 /// buttons sent a different mode than they claimed. The values below were each set and read
 /// back one at a time.
@@ -416,7 +417,7 @@ enum BudsProtocol {
     static func handshake() -> [[UInt8]] { [encodeHello()] }
 
     /// Builds a frame. `len` is a base-128 varint counting every byte after itself, so it
-    /// covers the six remaining header bytes plus the payload.
+    /// covers the seven remaining header bytes plus the payload.
     ///
     /// The single-byte reading this replaced agrees with it for every frame under 128 bytes —
     /// which is all of them today — and mis-frames anything larger, silently: the length then
@@ -446,8 +447,12 @@ enum BudsProtocol {
         return out
     }
 
-    /// Decodes a varint. nil means the bytes ran out mid-value, so the caller should wait for
-    /// more rather than guess at a short read.
+    /// Decodes a varint.
+    ///
+    /// nil means the value is not a value: either the bytes ran out mid-value, or the pattern is
+    /// longer than any legitimate varint (five bytes is the maximum here). Those two need
+    /// opposite handling — one is a short read to wait on, the other is a bad byte to step over —
+    /// so the caller tells them apart from the bytes rather than from this result.
     static func decodeVarint<C: Collection>(_ bytes: C) -> (value: Int, length: Int)?
     where C.Element == UInt8 {
         var value = 0, shift = 0, length = 0
@@ -485,7 +490,10 @@ enum BudsProtocol {
                   payload: [preset.value])
     }
 
-    /// BassWave: `[min][max][level]`, signed, with the bounds echoed from the getter.
+    /// BassWave: `[min][max][level]`, signed. The bounds are this unit's own `−5…+5` written
+    /// out, not read from the getter: nothing reads the getter's bounds yet, and the self-check
+    /// pins this payload against the captured `basswave-reply-2`, so a firmware that moved the
+    /// bounds would fail a test rather than have the app keep writing the old ones.
     static func encodeSetBassWave(_ level: Int) -> [UInt8] {
         let clamped = Int8(clamping: max(-5, min(5, level)))
         return makeFrame(0x00, 0x00, cmd: Setter.bassWave.rawValue,
@@ -496,7 +504,9 @@ enum BudsProtocol {
     /// Rings the given buds. Fire-and-forget: the tone stops itself and there is no opcode to
     /// stop it early, so the UI must not offer one.
     static func encodeFind(_ slots: [BatterySlot]) -> [UInt8] {
-        let ids = slots.map(\.rawValue)
+        // The count is one byte: more than 255 buds cannot be named. The UI offers two. Truncate
+        // rather than trap, so a bad caller loses the command instead of the process.
+        let ids = Array(slots.map(\.rawValue).prefix(255))
         return makeFrame(0x00, 0x00, cmd: Setter.find.rawValue,
                          messageType: MessageType.set.rawValue, sequence: nextSequence(),
                          payload: [UInt8(ids.count)] + ids)
@@ -505,6 +515,8 @@ enum BudsProtocol {
     /// One record of the getter's reply behind a count, per the "setter takes its getter's
     /// reply minus the status byte" rule that predicts every setter in this file.
     static func encodeSetTouch(_ rules: [TouchRule]) -> [UInt8] {
+        // One count byte, so 255 records is the ceiling; the UI writes two, one per earbud.
+        let rules = Array(rules.prefix(255))
         var payload: [UInt8] = [UInt8(rules.count)]
         for rule in rules { payload += [rule.side, rule.type, rule.gesture, rule.action] }
         return makeFrame(0x00, 0x00, cmd: Setter.touch.rawValue,
@@ -518,11 +530,18 @@ enum BudsProtocol {
                   sequence: nextSequence(), payload: [])
     }
 
-    private static var sequenceCounter: UInt8 = 0
+    /// Monotonic per-session sequence byte.
+    ///
+    /// Static because nothing else in the framing carries state, and locked because a static
+    /// mutable counter is the one piece of shared state in this file — the encoders are not
+    /// declared main-actor, so two of them on different queues would otherwise race on `&+=`.
+    private static let sequenceCounter = OSAllocatedUnfairLock(initialState: UInt8(0))
 
     static func nextSequence() -> UInt8 {
-        sequenceCounter &+= 1
-        return sequenceCounter
+        sequenceCounter.withLock { counter in
+            counter &+= 1
+            return counter
+        }
     }
 
     // MARK: - Receiving
@@ -541,12 +560,26 @@ enum BudsProtocol {
             if start > 0 { buffer.removeFirst(start) }
 
             guard buffer.count >= 2 else { break }
-            // A truncated varint is not a bad frame, only a short read — wait for more.
+
+            // A varint is at most five bytes and a continuation byte never terminates one, so
+            // five of them in a row can never become a value however much more arrives. That is
+            // a bad byte, not a short read, and `decodeVarint` returns nil for both. Waiting here
+            // would be permanent: no frame could ever complete, so every frame after the bad one
+            // would be dropped for the life of the channel while `rxBuffer` grew without bound.
+            if buffer.count >= 6, buffer[1...5].allSatisfy({ $0 & 0x80 != 0 }) {
+                buffer.removeFirst()
+                continue
+            }
+            // Otherwise a truncated varint is not a bad frame, only a short read — wait for more.
             guard let (length, varintLength) = decodeVarint(buffer[1...]) else { break }
 
-            // `length` counts the six remaining header bytes plus the payload, so anything
-            // smaller cannot be a frame: drop the sync byte and look for the next one.
-            guard length >= 7 else {
+            // `length` counts the seven remaining header bytes plus the payload — the sync byte
+            // and the varint are the other two — so anything smaller cannot be a frame, and the
+            // payload-length field is 16-bit, so nothing larger can be one either. Both mean this
+            // was not a frame boundary: step over the sync byte and look for the next one. The
+            // upper bound matters as much as the lower: without it an overlong varint decodes to
+            // a length no buffer will ever reach, which waits forever exactly like a poison byte.
+            guard length >= 7, length <= 7 + 0xffff else {
                 buffer.removeFirst()
                 continue
             }
@@ -732,7 +765,7 @@ enum BudsProtocol {
         bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
     }
 
-    /// One-line summary of a frame, for the trace and for `Tools/probe.swift`.
+    /// One-line summary of a frame, for the trace and for `Tools/sniff.swift`.
     static func describe(_ frame: Frame) -> String {
         let kind = MessageType(rawValue: frame.messageType).map { "\($0)" } ?? "unknown"
         return "cmd=\(String(format: "%02x", frame.cmd)) "
@@ -758,14 +791,18 @@ enum BudsProtocol {
     /// that are actually there.
     ///
     /// This is the invariant that makes a frame a frame: `len` is a varint covering
-    /// `6 + payload.count`, and the payload-length field has to agree with it. Re-encoding is
+    /// `7 + payload.count`, and the payload-length field has to agree with it. Re-encoding is
     /// the honest way to test it — it is a property of the bytes rather than a second opinion
     /// about them — and it catches the class of mistake this file used to contain, where a
     /// typed-out fixture carried a `len` describing different bytes than it held.
     static func lengthFieldsAgree(_ frame: Frame) -> Bool {
         let declared = encodeVarint(7 + frame.payload.count)
         let body = 1 + declared.count
-        guard frame.raw.count > body + 7 else { return false }
+        // A frame is `sync + varint + 7 header bytes + payload`, so an empty-payload frame is
+        // exactly `body + 7` bytes — this is a floor, not a strict bound. Getting it wrong made
+        // this function disagree with `drainFrames`, which accepts that frame: the validator
+        // called malformed the very shape the app sends as its own session opener.
+        guard frame.raw.count >= body + 7 else { return false }
         guard Array(frame.raw[1..<body]) == declared else { return false }
         let payloadLength = Int(frame.raw[body + 5]) | Int(frame.raw[body + 6]) << 8
         return body + 7 + payloadLength == frame.raw.count
@@ -865,6 +902,31 @@ enum BudsProtocol {
         check(bigFrames.count == 1 && bigFrames[0].payload.count == 299,
                "a 299-byte payload parses whole")
 
+        // An empty payload is legal, and it is not a corner case: it is the shape of the app's
+        // own session opener. The validator used to require `raw.count > body + 7`, which is
+        // exactly the size of that frame, so it called the app's own hello malformed while the
+        // parser accepted it — one invariant written twice, and disagreeing.
+        var emptyBuffer = encodeHello()
+        let emptyFrames = drainFrames(from: &emptyBuffer)
+        check(emptyFrames.count == 1, "an empty-payload frame parses")
+        check(emptyFrames.first.map { lengthFieldsAgree($0) } == true,
+              "an empty-payload frame satisfies the length invariant")
+
+        // A byte pattern that can never be a varint has to be stepped over, not waited on. Waiting
+        // is right for a short read; a poison byte needs the opposite, and confusing the two makes
+        // the parser deaf for the life of the channel. Each input is one bad frame followed by a
+        // good one, so this checks not just that nothing hangs but that the parse recovers.
+        let poisons: [(String, [UInt8])] = [
+            ("five continuation bytes", [sync, 0x80, 0x80, 0x80, 0x80, 0x80]),
+            ("an overlong varint length", [sync, 0x80, 0x80, 0x80, 0x80, 0x7f]),
+        ]
+        for (label, poison) in poisons {
+            var buffer = poison + big
+            let recovered = drainFrames(from: &buffer)
+            check(recovered.count == 1 && recovered[0].payload.count == 299 && buffer.isEmpty,
+                  "\(label): the parser resynchronises instead of stalling")
+        }
+
         // MARK: Handshake
 
         let hello = capture("hello-reply")
@@ -960,7 +1022,9 @@ enum BudsProtocol {
               "a truncated push is not evidence of Transparency")
 
         // Every mode and level the UI can select reads back as the firmware would describe it.
-        // Derived from a real readback so the header and both length fields stay well formed.
+        // The base is a real readback, so the header and both length fields stay well formed —
+        // but the value is generated, so this proves only that the mask table and its inverse
+        // agree. The captured `anc-reply-*` checks above are what pin the masks themselves.
         for mode in NoiseMode.allCases {
             let reply = derived("anc-reply-\(mode.rawValue)", from: capture("anc-reply-off"),
                                 payload: [0x00, 0x01, 0x01,
@@ -990,6 +1054,8 @@ enum BudsProtocol {
         // status byte. Asserting that identity is what lets one set of decoders serve both.
         let eqPush = capture("eq-push-bass")
         check(interpret(eqPush) == [.eqPreset(.bass)], "the EQ push uses its own numbering")
+        let eqPushBalanced = capture("eq-push-balanced")
+        check(interpret(eqPushBalanced) == [.eqPreset(.balanced)], "the Balanced EQ push")
         check(eqPush.payload == Array(eqBass.payload.dropFirst()),
               "the push body is the reply body minus the status byte: \(hex(eqPush.payload))")
 

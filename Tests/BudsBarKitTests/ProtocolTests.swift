@@ -98,7 +98,13 @@ final class ProtocolTests: XCTestCase {
                     // can never be handed a length that contradicts the bytes.
                     XCTAssertTrue(BudsProtocol.lengthFieldsAgree(frame),
                                   "\(capture.name) (\(label)): parser emitted a malformed frame")
-                    XCTAssertFalse(frame.payload.isEmpty, "\(capture.name) (\(label)): empty payload")
+                    // An empty payload is legal — it is the shape of the app's own hello — so the
+                    // assertion is that the frame re-parses to itself, not that it carries a
+                    // payload. Asserting non-empty encoded an accident of the corpus.
+                    var again = frame.raw
+                    let reparsed = BudsProtocol.drainFrames(from: &again)
+                    XCTAssertEqual(reparsed.first?.raw ?? [], frame.raw,
+                                   "\(capture.name) (\(label)): a parsed frame does not re-parse to itself")
                 }
             }
         }

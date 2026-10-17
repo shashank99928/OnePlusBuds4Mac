@@ -116,7 +116,7 @@ The app is `BudsBarKit`, a library, plus a four-line executable at
 `Sources/OnePlusBuds4/main.swift`. That split is what lets `swift test` reach the protocol and
 the views without launching the app.
 
-- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 122 checks, but the
+- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 127 checks, but the
   hardware is the only thing that settles what a write did. Every mode and level was set and
   read back; when this app sent `0x02` for Transparency the firmware stored Noise cancellation,
   which is how that bug was found.
@@ -139,6 +139,11 @@ the views without launching the app.
   `UPDATE_SNAPSHOTS=1 swift test --filter SnapshotTests` and read the diff.
 - **A non-zero exit.** `./build.sh` runs `--selfcheck` against the release binary and fails
   the build if a check does not pass.
+- **The SF Symbol names, against the running OS.** `Tools/check-symbols.swift` pulls every symbol
+  name out of the drawing call sites in `Sources/` and `Tools/` and checks each against the OS
+  glyph catalog, so `./build.sh` fails on a name that is not a symbol. It exists because one
+  shipped: `NoiseMode.adaptive` used a name that is not in the catalog, and a missing glyph is
+  invisible — the control simply drew nothing.
 
 ```sh
 swift test                                        # protocol checks and golden images
@@ -160,6 +165,16 @@ Being explicit about the gaps, so nobody mistakes them for settled:
 - **Firmware updates** are out of scope entirely: the OTA path is a separate channel.
 - **The charging bit.** The top bit of a battery byte is treated as "charging" on the strength
   of one sample. It does not affect the level shown.
+- **What a rejected write looks like.** A setter is answered with a `0x84` frame carrying the
+  setter id and a sequence byte, and those acks are in the corpus — but nothing in the captures
+  separates an accepted write from a rejected one, so the app does not act on them. A write the
+  buds decline is not reported as an error; it appears as the control snapping back to the old
+  value on the next readback, a few seconds later.
+- **Which reply wins.** Readbacks carry a sequence byte, but whether a reply echoes the request's
+  sequence was never measured, so the app does not use it to discard stale replies. If a slow
+  reply lands after a newer one, a control can briefly show the previous value until the next
+  poll — seconds later. The acks and this ordering are the two places where more captures would
+  turn a design decision into a check.
 
 ## The protocol
 
@@ -270,6 +285,7 @@ and restores what it found. It only ever writes values from the allow-listed set
 | `docs/styles.css` | The website's styling |
 | `docs/assets/` | The goldens and their web JPEG derivatives, plus `hero.jpg`, `og.png`, `icon.png`, `favicon.png` |
 | `Tools/freeze-fixtures.sh` | Regenerates the frozen corpus from the capture |
+| `Tools/check-symbols.swift` | Validates every SF Symbol name in the source against the running OS |
 | `Tools/make-icon.swift` | Renders the app icon, the `.icns` and the web icon |
 | `Tools/make-site-assets.swift` | Derives the website's JPEGs, hero crop and social card from the goldens |
 | `Tools/make-dmg-background.swift` | Renders the disk-image background |

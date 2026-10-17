@@ -277,9 +277,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// `airpods.pro.chargingcase.fill` — the name used here before — is not a real symbol,
     /// which is why the disconnected icon was blank. The `.wireless` variant is the one
     /// that exists.
+    ///
+    /// Both states come from the `earbud.*` family the rest of the app uses: `earbuds.case.fill`
+    /// when connected, `earbuds.case` when not. The pair is deliberate — filled against outline is
+    /// the state, and it survives a monochrome menu bar, a screenshot and a colour-blind reader.
+    /// Colour alone would not: the red tint is emphasis on top, not the signal. (`earbuds.fill` for
+    /// the bare pair does not exist, which is why the case is the glyph for both.)
     private var menuBarIcon: NSImage {
-        let name = buds.isConnected ? "airpods.pro" : "airpods.pro.chargingcase.wireless.fill"
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: name) ?? NSImage()
+        let name = buds.isConnected ? "earbuds.case.fill" : "earbuds.case"
+        // The description is what VoiceOver reads; using the symbol name made it say
+        // "earbuds.case.fill" rather than anything about the buds.
+        let description = buds.isConnected ? "Earbuds connected" : "Earbuds disconnected"
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
 
         guard !buds.isConnected else {
             image.isTemplate = true

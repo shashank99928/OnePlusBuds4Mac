@@ -5,19 +5,40 @@ struct FloatingBatteryView: View {
     @Bindable var buds: Buds
 
     var body: some View {
-        HStack(spacing: 14) {
-            floatingCell(glyph: "earbud.left", title: "L", name: "Left earbud",
-                         value: buds.battery.left)
-            floatingCell(glyph: "earbud.right", title: "R", name: "Right earbud",
-                         value: buds.battery.right)
-            if buds.battery.enclosure != nil {
-                floatingCell(glyph: "earbuds.case.fill", title: "Case", name: "Case",
-                             value: buds.battery.enclosure)
+        content
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: .capsule)
+    }
+
+    /// True in the instant the popup opens: the link is up but the control channel has not
+    /// opened, so both buds would draw a bare "—" with nothing to explain it. That is the
+    /// state the panel's battery row now labels, seen here from the menu bar.
+    private var isWaitingForBattery: Bool {
+        buds.battery.left == nil && buds.battery.right == nil && !buds.isControlChannelOpen
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if isWaitingForBattery {
+            // A `ControlsNotReady`-style line, but with an adaptive secondary rather than
+            // `Theme.secondary`: this card is a glass capsule over the desktop and is not
+            // pinned to the app's dark surface, so a fixed white would wash out in light mode.
+            Text("Reading the battery…")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 14) {
+                floatingCell(glyph: "earbud.left", title: "L", name: "Left earbud",
+                             value: buds.battery.left)
+                floatingCell(glyph: "earbud.right", title: "R", name: "Right earbud",
+                             value: buds.battery.right)
+                if buds.battery.enclosure != nil {
+                    floatingCell(glyph: "earbuds.case.fill", title: "Case", name: "Case",
+                                 value: buds.battery.enclosure)
+                }
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
-        .glassEffect(.regular, in: .capsule)
     }
 
     private func floatingCell(glyph: String, title: String, name: String,

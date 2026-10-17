@@ -10,9 +10,10 @@ import SwiftUI
 
 /// Small "live" dot used next to the device name.
 ///
-/// Decorative: the connection state is carried by text (`StatusDot` sits beside the device
-/// name, and the footer says "Connected" / "Disconnected"), so a screen reader hearing a
-/// colourless dot twice would only be noise.
+/// Decorative: the connection state is carried by text instead — the window's footer says
+/// "Connected" / "Disconnected", and in the popover (which has no footer) `DeviceHeader`
+/// announces it for VoiceOver — so a screen reader hearing a colourless dot as well would
+/// only be noise.
 struct StatusDot: View {
     var on: Bool
 
@@ -86,8 +87,27 @@ struct PowerButton: View {
 /// "Earbuds · <name> ●" with the chip glyph, mirroring the reference's "Room 27°C ●".
 struct DeviceHeader: View {
     @Bindable var buds: Buds
+    /// The window's footer already announces the connection state, so it is off there. The
+    /// popover has no footer, so its header carries the state for VoiceOver instead.
+    var announcesConnectionState = false
 
     var body: some View {
+        if announcesConnectionState {
+            header
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Earbuds, \(buds.name)")
+                .accessibilityValue(connectionState)
+        } else {
+            header
+        }
+    }
+
+    /// The same phrase the window's footer uses, so the two surfaces say the same thing.
+    private var connectionState: String {
+        buds.isPaired ? (buds.isConnected ? "Connected" : "Disconnected") : "Not paired"
+    }
+
+    private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: "earbuds")
                 .font(.system(size: 16, weight: .medium))
@@ -127,7 +147,10 @@ struct BatteryChip: View {
     var placement: BudsProtocol.BudPlacement? = nil
 
     var body: some View {
-        let stowed = placement == .inCase
+        // A bud that is in the case, or that has gone absent, is not in use: it must not be
+        // drawn at full strength nor its last reading presented as current. `notPresent` is
+        // decodable but was never seen on hardware, so it is folded in with `inCase`.
+        let stowed = !(placement?.isUsable ?? true)
         let muted = stowed || level == nil
 
         VStack(alignment: .leading, spacing: 8) {
@@ -166,7 +189,7 @@ struct BatteryChip: View {
         .premiumCard(cornerRadius: 16)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            level.map { "\(title) battery \($0) percent\(stowed ? ", in the case" : "")" }
+            level.map { "\(title) battery \($0) percent\(stowed ? ", not in use" : "")" }
                  ?? "\(title) battery unknown")
     }
 }
@@ -175,17 +198,33 @@ struct BatteryChip: View {
 struct BatteryChipsRow: View {
     @Bindable var buds: Buds
 
+    /// Nothing has been read yet: the channel is not open and neither bud has a level. The
+    /// chips would be bare dashes with nothing to explain them — the state the warming-up
+    /// panel exists to avoid — so the row says why instead.
+    private var isWaitingForBattery: Bool {
+        buds.battery.left == nil && buds.battery.right == nil && !buds.isControlChannelOpen
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            BatteryChip(title: "Left", glyph: "earbud.left", level: buds.battery.left,
-                        placement: buds.placement.left)
-            BatteryChip(title: "Right", glyph: "earbud.right", level: buds.battery.right,
-                        placement: buds.placement.right)
-            // The case reports 0% while it is shut or asleep, which `interpret` turns into
-            // nil rather than a false flat battery — that already drops the chip on its own.
-            if buds.battery.enclosure != nil {
-                BatteryChip(title: "Case", glyph: "earbuds.case.fill",
-                            level: buds.battery.enclosure)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                BatteryChip(title: "Left", glyph: "earbud.left", level: buds.battery.left,
+                            placement: buds.placement.left)
+                BatteryChip(title: "Right", glyph: "earbud.right", level: buds.battery.right,
+                            placement: buds.placement.right)
+                // The case reports 0% while it is shut or asleep, which `interpret` turns into
+                // nil rather than a false flat battery — that already drops the chip on its own.
+                // Its *presence* is separate from its charge: the wear report names the slot
+                // whenever the case is awake, and the hero uses the same evidence, so the two
+                // surfaces agree instead of one inventing a case and the other hiding it.
+                if buds.isCaseReported {
+                    BatteryChip(title: "Case", glyph: "earbuds.case.fill",
+                                level: buds.battery.enclosure)
+                }
+            }
+
+            if isWaitingForBattery {
+                ControlsNotReady(text: "Reading the battery…")
             }
         }
     }
@@ -256,8 +295,14 @@ struct BatteryHero: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            DevicePill(glyph: "earbuds.case.fill",
-                       title: "Case", level: buds.battery.enclosure)
+            // The case is only drawn once something has reported it — the wear report names
+            // the slot whenever the case is awake, the battery report names it when its charge
+            // is read. Without either, a permanent "Case —" claimed a case the buds had never
+            // mentioned, and disagreed with the panel, which omitted it.
+            if buds.isCaseReported {
+                DevicePill(glyph: "earbuds.case.fill",
+                           title: "Case", level: buds.battery.enclosure)
+            }
 
             // Sound leaving the buds, standing in for the reference's airflow. Clipped so
             // the arcs fade out instead of running down into the reading below.
@@ -342,7 +387,7 @@ struct ModeGrid: View {
 
     /// The container width at which four pills leave enough room for the longest label.
     /// Measured, then rounded up for headroom — there are no font metrics at compile time,
-    /// so `ModeGridTests` pins both branches against the two real surface widths.
+    /// so `SnapshotTests` pins both branches against the two real surface widths.
     static let fourAcrossMinimum: CGFloat = 400
 
     var body: some View {
@@ -461,7 +506,10 @@ struct NoiseControlSection: View {
     @Bindable var buds: Buds
     @State private var showingHelp = false
 
-    private var canSwitchModes: Bool { buds.isControlChannelOpen }
+    /// Enabled only once the current mode has been read: with no readback the pills have
+    /// nothing to mark as selected, so an enabled grid of unselected pills would claim the
+    /// buds are on no mode at all. The notice below says why in the meantime.
+    private var canSwitchModes: Bool { buds.isControlChannelOpen && buds.mode != nil }
 
     /// Honor the system setting: the level row slides in and out, and the pills cross-fade
     /// when the mode changes. Both are decoration, and both are the kind that makes some
@@ -542,7 +590,7 @@ struct EQPresetSelector: View {
     }
 
     private func segment(_ preset: EQPreset) -> some View {
-        let available = preset != .custom || buds.hasCustomEQProfile
+        let available = preset != .custom || buds.hasCustomEQProfile == true
         let selected = buds.eqPreset == preset
         return Button {
             buds.set(eqPreset: preset)
@@ -566,7 +614,11 @@ struct EQPresetSelector: View {
         }
         .buttonStyle(.plain)
         .disabled(!available)
-        .opacity(available ? channelDim(buds.isControlChannelOpen, selected: selected) : 0.45)
+        // A segment that is selected but not available — the buds are on the custom preset
+        // while its profile has been deleted on the phone — keeps its selected styling.
+        // Greying it out would hide the one piece of state the row exists to report.
+        .opacity(available ? channelDim(buds.isControlChannelOpen, selected: selected)
+                           : (selected ? 1 : 0.45))
         .help(available ? preset.label : "Save a custom profile in the phone app first")
         .accessibilityLabel(preset.label)
         // The reason Custom is unusable is not visible on screen — the tone of its label is
@@ -616,7 +668,10 @@ struct BassWaveControl: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Swipe up or down to change the bass emphasis")
         .accessibilityAdjustableAction { direction in
-            let current = buds.bassWave ?? 0
+            // Without a reading there is no level to step from. Inventing flat (0) would send
+            // the real level ± 1, and this control's whole value is that it edits the value it
+            // announces — which, unread, is "Not reported".
+            guard let current = buds.bassWave else { return }
             switch direction {
             case .increment: buds.set(bassWave: min(current + 1, Self.range.upperBound))
             case .decrement: buds.set(bassWave: max(current - 1, Self.range.lowerBound))
@@ -671,7 +726,12 @@ struct BassWaveControl: View {
 struct SoundSection: View {
     @Bindable var buds: Buds
 
-    private var enabled: Bool { buds.isControlChannelOpen }
+    /// The EQ preset and BassWave are both read once when the channel opens; the section waits
+    /// for both, so neither control is enabled while its value is still unknown — and a read
+    /// that was lost leaves the notice up rather than an enabled row showing "—".
+    private var isReady: Bool {
+        buds.isControlChannelOpen && buds.eqPreset != nil && buds.bassWave != nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -681,11 +741,11 @@ struct SoundSection: View {
             EQPresetSelector(buds: buds)
             BassWaveControl(buds: buds)
 
-            if !enabled {
+            if !isReady {
                 ControlsNotReady(text: "Reading the sound settings…")
             }
         }
-        .disabled(!enabled)
+        .disabled(!isReady)
     }
 }
 
@@ -760,7 +820,9 @@ struct FindMyEarbudsSection: View {
 struct EarbudControlsSection: View {
     @Bindable var buds: Buds
 
-    private var enabled: Bool { buds.isControlChannelOpen }
+    /// The gesture table is read once when the channel opens; until those records land there
+    /// is no row to show, and an enabled row would read "Not reported" with no explanation.
+    private var isReady: Bool { buds.isControlChannelOpen && !buds.touchRules.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -777,11 +839,11 @@ struct EarbudControlsSection: View {
                 }
             }
 
-            if !enabled {
+            if !isReady {
                 ControlsNotReady(text: "Reading the gesture table from the earbuds…")
             }
         }
-        .disabled(!enabled)
+        .disabled(!isReady)
     }
 }
 
@@ -828,12 +890,23 @@ struct GestureRow: View {
             actionLabel
         } else {
             Menu {
-                Picker("", selection: Binding(
-                    get: { current ?? .none },
-                    set: { buds.setTouch(gesture: gesture, action: $0) }
+                // The selection is optional so an unread table ticks nothing: defaulting to
+                // `.none` put a checkmark on "Do nothing" for a gesture that had not been
+                // read. The placeholder tag is disabled, so it can be shown but not chosen;
+                // the write path still carries a real action.
+                Picker("", selection: Binding<BudsProtocol.GestureAction?>(
+                    get: { current },
+                    set: { newValue in
+                        guard let newValue else { return }
+                        buds.setTouch(gesture: gesture, action: newValue)
+                    }
                 )) {
+                    Text("Not reported")
+                        .tag(Optional<BudsProtocol.GestureAction>.none)
+                        .disabled(true)
                     ForEach(gesture.actions) { action in
-                        Label(action.label, systemImage: action.symbol).tag(action)
+                        Label(action.label, systemImage: action.symbol)
+                            .tag(Optional(action))
                     }
                 }
                 .pickerStyle(.inline)
@@ -884,7 +957,8 @@ struct DeviceDetailsSection: View {
                 .font(.system(size: 15, weight: .semibold))
 
             row("Firmware", buds.firmware ?? "—", monospaced: true)
-            row("Custom EQ profile", buds.hasCustomEQProfile ? "Saved" : "None")
+            row("Custom EQ profile",
+                buds.hasCustomEQProfile.map { $0 ? "Saved" : "None" } ?? "—")
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -924,14 +998,16 @@ struct BudsDisconnectedNote: View {
 
             // "Away" was the phone app's word for the buds sitting in a closed case, and it
             // reads as a place rather than a state. What is true, and what the fix follows
-            // from, is that the link is down.
-            Text(buds.isPaired ? "Earbuds aren't connected" : "No earbuds paired")
+            // from, is that the link is down. When nothing is paired, the honest reading is
+            // that the app could not find buds it can drive — which also covers a Buds 4
+            // pair that is simply not connected yet, since that is what hides the service.
+            Text(buds.isPaired ? "Earbuds aren't connected" : "Can't find your earbuds")
                 .font(.system(size: 15, weight: .semibold))
 
             Text(buds.isPaired
                  ? "Take the earbuds out of the case, then switch on to connect."
-                 : "No paired earbuds speak this protocol. Pair your OnePlus Buds 4 in "
-                 + "Bluetooth settings first.")
+                 : "If they're paired, connect them once in Bluetooth settings so macOS "
+                 + "exposes the control service.")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)

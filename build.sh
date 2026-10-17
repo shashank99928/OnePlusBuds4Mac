@@ -41,6 +41,15 @@ fi
 
 echo "built $APP"
 
+# The source-level guard, next to the binary one: every SF Symbol name is validated against
+# the running OS. SwiftUI draws nothing at all for a name it does not know and reports no
+# error, so a typo ships as a blank icon — which is how the noise-mode pill once came out
+# empty. Cheap, so it runs on every build.
+if ! swift Tools/check-symbols.swift; then
+    echo "error: SF Symbol check failed" >&2
+    exit 1
+fi
+
 # The protocol checks, run against the binary that was just built — release included, since
 # that is what ships. They exercise the real selfCheck, not an assert that optimises away.
 if ! "./$APP/Contents/MacOS/OnePlusBuds4" --selfcheck; then

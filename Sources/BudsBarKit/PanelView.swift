@@ -19,7 +19,9 @@ struct PanelView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    DeviceHeader(buds: buds)
+                    // The popover has no footer, so the header states the connection for
+                    // VoiceOver here; the window's footer already does it there.
+                    DeviceHeader(buds: buds, announcesConnectionState: true)
                     PowerButton(buds: buds)
                     AppMenuButton()
                 }

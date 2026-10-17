@@ -20,6 +20,11 @@ VOL_NAME="OnePlus Buds 4"
 APP="$APP_NAME.app"
 DIST="dist"
 OUT_DMG="$DIST/$APP_NAME.dmg"
+# GitHub rewrites spaces to dots in release asset names, so the file's *download* name is not
+# the name it has on disk. The site links the rewritten form, because the convenience URL
+# /releases/latest/download/<name> only resolves against the name GitHub actually stores —
+# percent-encoding the space returns 404. Print it so the upload command is unambiguous.
+REL_NAME="${APP_NAME// /.}.dmg"
 RW_DMG="$DIST/rw.dmg"
 VOLUME="/Volumes/$VOL_NAME"
 BACKGROUND="Resources/dmg-background.png"
@@ -124,8 +129,6 @@ hdiutil detach "$VOLUME" >/dev/null
 hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" >/dev/null
 rm -f "$RW_DMG"
 
-echo "built $(du -h "$OUT_DMG" | cut -f1 | tr -d ' ')  $OUT_DMG"
-
 # --- 8. Notarize (optional) -----------------------------------------------------------
 # Gatekeeper refuses to open a downloaded, unnotarized image. Give notarytool a stored
 # keychain profile (xcrun notarytool store-credentials <profile>) and name it here; the
@@ -138,3 +141,6 @@ if [ -n "${NOTARY_PROFILE:-}" ]; then
 fi
 
 echo "install:  open \"$OUT_DMG\""
+echo "release:  gh release upload <tag> \"$OUT_DMG\" --clobber"
+echo "          → stored as $REL_NAME (GitHub turns the spaces into dots)"
+echo "          → https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/$REL_NAME"

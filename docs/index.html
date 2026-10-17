@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OnePlus Buds 4 for macOS — a native Mac controller for your earbuds</title>
-<meta name="description" content="A native SwiftUI app that controls OnePlus Buds 4 from the Mac: noise control, Sound Master EQ, BassWave, touch gestures, find-my-earbuds, battery and firmware. Free, open source, no telemetry.">
+<title>OnePlus Buds 4 for macOS — native Mac control</title>
+<meta name="description" content="Control OnePlus Buds 4 from your Mac: noise cancellation, Transparency, Adaptive, Sound Master EQ, BassWave, gestures and find-my-earbuds.">
 <link rel="canonical" href="https://shashank99928.github.io/OnePlusBuds4Mac/">
 <link rel="icon" href="assets/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="assets/icon.png">
@@ -16,6 +16,7 @@
 <meta property="og:image" content="https://shashank99928.github.io/OnePlusBuds4Mac/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
 <meta property="og:url" content="https://shashank99928.github.io/OnePlusBuds4Mac/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="OnePlus Buds 4 for macOS">
@@ -23,7 +24,6 @@
 <meta name="twitter:image" content="https://shashank99928.github.io/OnePlusBuds4Mac/assets/og.png">
 
 <meta name="author" content="Shashank Tripathi">
-<meta name="keywords" content="OnePlus Buds 4 Mac, control OnePlus Buds 4 on macOS, OnePlus Buds noise cancellation Mac, earbuds EQ Mac app, find my earbuds Mac, oppointeraction, OPPO earbuds macOS">
 <meta property="og:site_name" content="OnePlus Buds 4 for macOS">
 <meta property="og:locale" content="en_US">
 <meta property="og:image:alt" content="OnePlus Buds 4 for macOS — your earbuds, from your Mac.">
@@ -46,10 +46,10 @@
   "releaseNotes": "https://github.com/shashank99928/OnePlusBuds4Mac/releases",
   "isAccessibleForFree": true,
   "license": "https://opensource.org/license/mit",
-  "downloadUrl": "https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus%20Buds%204.dmg",
-  "installUrl": "https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus%20Buds%204.dmg",
+  "downloadUrl": "https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus.Buds.4.dmg",
+  "installUrl": "https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus.Buds.4.dmg",
   "url": "https://shashank99928.github.io/OnePlusBuds4Mac/",
-  "screenshot": "https://shashank99928.github.io/OnePlusBuds4Mac/assets/window.png",
+  "screenshot": "https://shashank99928.github.io/OnePlusBuds4Mac/assets/og.png",
   "image": "https://shashank99928.github.io/OnePlusBuds4Mac/assets/og.png",
   "description": "A native macOS app that controls OnePlus Buds 4 over the earbuds' own control channel: noise cancellation, Transparency, Adaptive, Sound Master EQ, BassWave, touch gestures, find-my-earbuds, battery and firmware. Free and open source.",
   "featureList": [
@@ -140,6 +140,8 @@
 </head>
 <body>
 
+<a class="sr-only" href="#main">Skip to content</a>
+
 <header>
   <div class="wrap header-inner">
     <a class="brand" href="./">
@@ -152,7 +154,7 @@
       <a href="#platforms">Platforms</a>
       <a href="#install">Install</a>
       <a href="https://github.com/shashank99928/OnePlusBuds4Mac">GitHub</a>
-      <a class="btn btn-primary" href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus%20Buds%204.dmg" download>
+      <a class="btn btn-primary" href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus.Buds.4.dmg" download>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg>
         Download
       </a>
@@ -160,7 +162,7 @@
   </div>
 </header>
 
-<main>
+<main id="main">
 
   <!-- ------------------------------- hero ------------------------------- -->
   <section class="hero">
@@ -176,7 +178,7 @@
       </p>
 
       <div class="hero-actions">
-        <a class="btn btn-primary" href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus%20Buds%204.dmg" download>
+        <a class="btn btn-primary" href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus.Buds.4.dmg" download>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg>
           Download for macOS
         </a>
@@ -186,13 +188,13 @@
         </a>
       </div>
 
-      <div class="facts">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Free and open source (MIT)</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> macOS 26 or later</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Apple silicon</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 2.3&nbsp;MB download</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> No accounts, no telemetry</span>
-      </div>
+      <ul class="facts">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Free and open source (MIT)</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> macOS 26 or later</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Apple silicon</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 2.3&nbsp;MB download</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> No accounts, no telemetry</li>
+      </ul>
 
       <div class="shot">
         <img src="assets/hero.jpg" width="940" height="1180" fetchpriority="high"
@@ -385,7 +387,7 @@
 
         <div class="screen">
           <figure>
-            <img src="assets/panel-warming.jpg" width="680" height="1442"
+            <img src="assets/panel-warming.jpg" width="680" height="1604"
                  loading="lazy" decoding="async"
                  alt="The menu-bar panel a moment after connecting, before the earbuds have answered: dash placeholders for battery, unselected noise-control modes and a short note under each section.">
             <figcaption>
@@ -419,37 +421,37 @@
           </thead>
           <tbody>
             <tr>
-              <td>macOS 26 (Tahoe) or later</td>
+              <th scope="row">macOS 26 (Tahoe) or later</th>
               <td><span class="status yes">Supported</span></td>
               <td>The app targets the macOS 26 SDK and pins itself to the dark appearance, so what you see is what it draws.</td>
             </tr>
             <tr>
-              <td>Apple silicon</td>
+              <th scope="row">Apple silicon</th>
               <td><span class="status yes">Supported</span></td>
               <td>The download is a native arm64 build (M1 and later). Ad-hoc signed, so the first launch needs right-click&nbsp;→&nbsp;Open.</td>
             </tr>
             <tr>
-              <td>Intel Macs</td>
+              <th scope="row">Intel Macs</th>
               <td><span class="status maybe">Build from source</span></td>
               <td>macOS 26 still runs on a few Intel models, but the release is arm64-only. Building on the machine (<code>./build.sh</code>) produces a working native binary.</td>
             </tr>
             <tr>
-              <td>macOS 15 and earlier</td>
+              <th scope="row">macOS 15 and earlier</th>
               <td><span class="status no">Not supported</span></td>
               <td>Built against the macOS 26 SDK with no back-deployment, and the interface uses APIs that do not exist before it.</td>
             </tr>
             <tr>
-              <td>OnePlus Buds 4</td>
+              <th scope="row">OnePlus Buds 4</th>
               <td><span class="status yes">Supported</span></td>
               <td>The model this was built and tested against, over the <code>oppointeraction</code> control channel.</td>
             </tr>
             <tr>
-              <td>Other OPPO / realme buds</td>
+              <th scope="row">Other OPPO / realme buds</th>
               <td><span class="status maybe">Untested</span></td>
               <td>They share parts of the same protocol and service, so it may work, but nothing here was verified on them and the app finds earbuds by the service they advertise.</td>
             </tr>
             <tr>
-              <td>iPhone, Android, Windows, Linux</td>
+              <th scope="row">iPhone, Android, Windows, Linux</th>
               <td><span class="status no">Not applicable</span></td>
               <td>This is the Mac side only. It does not replace the phone app — it sits alongside it.</td>
             </tr>
@@ -485,35 +487,35 @@
         <p>One click to download the disk image, one drag to Applications. Nothing to configure.</p>
       </div>
 
-      <div class="steps">
-        <div class="step">
-          <span class="num" aria-hidden="true">1</span>
+      <ol class="steps">
+        <li class="step">
+          <span class="num">1</span>
           <h3>Download the disk image</h3>
           <p>
-            <a href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus%20Buds%204.dmg" download>OnePlus Buds 4.dmg</a>
+            <a href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus.Buds.4.dmg" download>OnePlus Buds 4.dmg</a>
             — 2.3&nbsp;MB, from the latest GitHub release. The newest version is always at the
             same link.
           </p>
-        </div>
-        <div class="step">
-          <span class="num" aria-hidden="true">2</span>
+        </li>
+        <li class="step">
+          <span class="num">2</span>
           <h3>Drag it to Applications</h3>
           <p>The image opens with the app beside an Applications shortcut, on a styled background.</p>
-        </div>
-        <div class="step">
-          <span class="num" aria-hidden="true">3</span>
+        </li>
+        <li class="step">
+          <span class="num">3</span>
           <h3>Right-click → Open once</h3>
           <p>
             The build is ad-hoc signed, so the first launch on a Mac that has never seen it asks
             for a confirmation. After that it opens normally, and the menu-bar item appears
             whenever your buds connect.
           </p>
-        </div>
-      </div>
+        </li>
+      </ol>
 
-      <div class="section-head" style="margin-top:52px">
-        <h3 style="font-size:19px">Rather build it yourself?</h3>
-        <p style="font-size:15px">
+      <div class="section-head u-mt-52">
+        <h3 class="u-fs-19">Rather build it yourself?</h3>
+        <p class="u-fs-15">
           <code>git clone</code>, <code>./build.sh</code>, or <code>./make-dmg.sh</code> to
           produce the disk image. Set <code>SIGN_IDENTITY</code> and
           <code>NOTARY_PROFILE</code> and the same script gives you a Developer ID–signed,
@@ -535,59 +537,59 @@
         </p>
       </div>
 
-      <div class="checks">
-        <div class="check">
+      <ul class="checks">
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
           <span><b>The earbuds' own readbacks.</b> Every mode and level was set on real hardware and read back. The first version sent the wrong byte for Transparency and the firmware stored Noise cancellation — that is how it was found.</span>
-        </div>
-        <div class="check">
+        </li>
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
           <span><b>23 raw frames captured off the wire</b>, committed with both length fields intact. Fixtures are captured, never typed: the app used to crash at launch because one hand-written fixture disagreed with its own header.</span>
-        </div>
-        <div class="check">
+        </li>
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
           <span><b>Tests, not a launch hook.</b> <code>swift test</code> runs the protocol checks, replays the crash as a regression test, and verifies the setter ids against the acknowledgements the hardware sends.</span>
-        </div>
-        <div class="check">
+        </li>
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
           <span><b>Golden images at the real widths</b> — 340 points for the panel, 470 for the window. A padding change that clips a label fails the test instead of being noticed three commits later.</span>
-        </div>
-      </div>
+        </li>
+      </ul>
 
-      <div class="section-head" style="margin-top:56px">
-        <h2 style="font-size:24px">And what is not verified</h2>
-        <p style="font-size:16px">Stated plainly, so nobody mistakes these for settled:</p>
+      <div class="section-head u-mt-56">
+        <h2 class="u-fs-24">And what is not verified</h2>
+        <p class="u-fs-16">Stated plainly, so nobody mistakes these for settled:</p>
       </div>
-      <div class="checks">
-        <div class="check">
+      <ul class="checks">
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
           <span><b>What the find-my-earbuds tone sounds like.</b> The command is sent and accepted; it was never confirmed by ear on both earbuds.</span>
-        </div>
-        <div class="check">
+        </li>
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
           <span><b>"Slide = volume control".</b> That label comes from the protocol write-up. That a slide changes volume rather than scrolling was not measured.</span>
-        </div>
-        <div class="check">
+        </li>
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
           <span><b>Custom EQ is read-only.</b> Nobody has ever transmitted the upload format and there is no documented delete, so the app reports whether a profile exists and never writes the earbuds' flash.</span>
-        </div>
-        <div class="check">
+        </li>
+        <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
           <span><b>Firmware updates</b> are out of scope entirely: the over-the-air path is a separate channel and deliberately not touched. The app reads the version; it never writes firmware.</span>
-        </div>
-      </div>
+        </li>
+      </ul>
     </div>
   </section>
 
   <!-- ---------------------------- closing ---------------------------- -->
   <section id="get">
     <div class="wrap">
-      <div class="section-head" style="margin-bottom:26px">
+      <div class="section-head u-mb-26">
         <h2>Give it a try</h2>
         <p>If your buds are paired with your Mac, you are about 30 seconds away.</p>
       </div>
-      <div class="hero-actions" style="margin-top:0">
-        <a class="btn btn-primary" href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus%20Buds%204.dmg" download>
+      <div class="hero-actions u-mt-0">
+        <a class="btn btn-primary" href="https://github.com/shashank99928/OnePlusBuds4Mac/releases/latest/download/OnePlus.Buds.4.dmg" download>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg>
           Download for macOS
         </a>
@@ -665,13 +667,13 @@
 
 <footer>
   <div class="wrap">
-    <div class="footer-links">
-      <a href="https://github.com/shashank99928/OnePlusBuds4Mac">Source</a>
-      <a href="https://github.com/shashank99928/OnePlusBuds4Mac/releases">Releases</a>
-      <a href="https://github.com/shashank99928/OnePlusBuds4Mac/issues">Report a bug</a>
-      <a href="https://github.com/shashank99928/OnePlusBuds4Mac/blob/main/README.md">Documentation</a>
-      <a href="https://github.com/shashank99928/OnePlusBuds4Mac/blob/main/LICENSE">MIT licence</a>
-    </div>
+    <ul class="footer-links">
+      <li><a href="https://github.com/shashank99928/OnePlusBuds4Mac">Source</a></li>
+      <li><a href="https://github.com/shashank99928/OnePlusBuds4Mac/releases">Releases</a></li>
+      <li><a href="https://github.com/shashank99928/OnePlusBuds4Mac/issues">Report a bug</a></li>
+      <li><a href="https://github.com/shashank99928/OnePlusBuds4Mac/blob/main/README.md">Documentation</a></li>
+      <li><a href="https://github.com/shashank99928/OnePlusBuds4Mac/blob/main/LICENSE">MIT licence</a></li>
+    </ul>
     <p>
       Written by <a href="https://github.com/shashank99928">Shashank Tripathi</a>. The wire
       format was reverse-engineered with, and cross-checked against, the open-source
