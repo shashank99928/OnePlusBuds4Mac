@@ -16,8 +16,10 @@ code, font or image is ever fetched.
 
 ## Features
 
-The feature set is at parity with the phone app: everything the OnePlus Buds app drives over
-this channel is here.
+The feature set is at parity with the phone app for everything this channel has been shown to
+drive — with one deliberate exception, spelled out in [*What is not verified*](#what-is-not-verified):
+the phone app's **Dual connection** screen. Everything listed below is a real write or a
+readback against the hardware, not a display-only imitation.
 
 - **Noise control** — Off, Noise cancellation (Low / Moderate / High / Auto), Transparency,
   and Adaptive, laid out as the phone app lays them out. Switching is a real write to the
@@ -31,7 +33,8 @@ this channel is here.
 - **Find my earbuds** — rings the left, the right, or both.
 - **Earbud controls** — remaps the media touch gestures (double tap, triple tap, touch and
   hold, slide) to what the buds actually support. Only the media context is remappable.
-- **Firmware readout** and whether a custom EQ profile is saved.
+- **Firmware readout** — the string the earbuds report, shown exactly as they report it: a
+  comma-separated list, not decoded further — and whether a custom EQ profile is saved.
 - **Connect / disconnect** — power the buds from the app.
 - **Launch at login** — optional, so the app is already running when the buds connect.
 - **Two surfaces, one connection** — a full window and a compact menu-bar popover that
@@ -134,18 +137,23 @@ the views without launching the app.
   the self-check used to crash at launch because one hand-written fixture's `len` varint
   disagreed with its own payload-length field, and the parser was right to reject it. Nothing
   enters the corpus except through `Tools/freeze-fixtures.sh` from a real capture.
-- **`swift test`.** 10 tests across two classes — 8 protocol tests and 2 snapshot tests. The
+- **`swift test`.** 13 tests across two classes — 9 protocol tests and 4 snapshot tests. The
   checks are tests, not a launch hook: the corpus invariant, the crash as a regression test,
-  the setter ids against the acknowledgements the hardware sends, and the property that every
-  mode the UI can offer decodes back to itself.
+  the setter ids against the acknowledgements the hardware sends, the property that every
+  mode the UI can offer decodes back to itself, and the property that the self-check *reports*
+  a failure on a degraded corpus rather than trapping on it.
 - **Golden images, at the widths the surfaces really render at.** 340pt is the popover and
   470pt is the window column; if a change makes the noise-control labels clip at either, a
   test fails rather than someone noticing three commits later. The four goldens —
   `window.png`, `panel.png`, `panel-warming.png` and `panel-disconnected.png` — are recorded in
   `Tests/BudsBarKitTests/SnapshotTests.swift` and compared per pixel against a fresh render.
   They live in the website's asset directory (`docs/assets`) on purpose, so the screenshot a
-  visitor sees is byte-for-byte the one the test verifies. Regenerate deliberately with
-  `UPDATE_SNAPSHOTS=1 swift test --filter SnapshotTests` and read the diff.
+  visitor sees is byte-for-byte the one the test verifies. The individual controls the four
+  surfaces never isolate — the Noise-cancellation level row, the case chip, a control channel
+  that has dropped while its last reading is still on screen — have their own goldens in
+  `Tests/Goldens/`, kept out of `docs/assets` because a lone control is not a website asset.
+  Regenerate deliberately with `UPDATE_SNAPSHOTS=1 swift test --filter SnapshotTests` and read
+  the diff.
 - **A non-zero exit.** `./build.sh` runs `--selfcheck` against the release binary and fails
   the build if a check does not pass.
 - **The SF Symbol names, against the running OS.** `Tools/check-symbols.swift` pulls every symbol
@@ -164,6 +172,14 @@ swift .build/debug/OnePlusBuds4 --render-snapshots   # -> docs/assets
 
 Being explicit about the gaps, so nobody mistakes them for settled:
 
+- **Dual connection.** The phone app shows and changes which devices the buds are linked to.
+  This app does not, and it is the one phone-app feature that has no counterpart here. The buds
+  do push a connected-device notification — one is in the corpus, and its payload carries the
+  device names as length-prefixed strings — but the fields around those strings have never been
+  captured in a form that can be read back without guessing, `0x12` has no captured reply, and
+  no setter for the toggle has ever been seen. The frame is recognised as a notification and
+  ignored, the same treatment every unmodelled topic gets, rather than a device list invented
+  from a single sample. More captures close this the way the rest of the protocol was closed.
 - **What the find-my-earbuds tone sounds like.** The command is sent and accepted; it was
   never confirmed by ear on both buds.
 - **Slide → "Volume control".** The label is from the protocol write-up. That a slide changes
@@ -291,8 +307,9 @@ and restores what it found. It only ever writes values from the allow-listed set
 | `Sources/BudsBarKit/LaunchAtLogin.swift` | `SMAppService`-backed launch-at-login |
 | `Sources/OnePlusBuds4/main.swift` | The whole executable: one call into the library |
 | `Tests/BudsBarKitTests/ProtocolTests.swift` | The protocol checks, as tests |
-| `Tests/BudsBarKitTests/SnapshotTests.swift` | The golden-image comparison; the goldens are recorded here |
+| `Tests/BudsBarKitTests/SnapshotTests.swift` | The golden-image comparisons; the four site goldens are recorded here |
 | `Tests/Fixtures/buds4-frames.hex` | The capture of record |
+| `Tests/Goldens/` | The component goldens — test-only, kept out of `docs/assets` (see `Snapshots.png(_:width:)`) |
 | `docs/index.html` | The website, published from `docs/` with GitHub Pages |
 | `docs/styles.css` | The website's styling |
 | `docs/sculpture.js` | The hero's WebGL2 sculpture; the site's only script, optional by design |

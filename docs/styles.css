@@ -66,6 +66,17 @@ a:hover { color: #b7d0ff; text-decoration: underline; }
 h1, h2, h3 { line-height: 1.15; letter-spacing: -0.02em; margin: 0; }
 p { margin: 0; }
 
+/* Every image here is content, never a control: not one of them is a link, and none of them
+   wants to be. Taking pointer events off them removes the pointer cursor, the drag-to-desktop
+   ghost and the browser's image menu — "Open Image in New Tab", "Save Image As", "Copy Image" —
+   which are the only ways off this page that are not this page. Text stays selectable and every
+   link still takes its own clicks, because a link's own box is still a hit target. */
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
+}
+
 .wrap { width: min(100% - 48px, var(--page)); margin-inline: auto; }
 
 /* ---------- header ---------- */
@@ -323,7 +334,8 @@ section { padding: 76px 0; }
 .screen figcaption { margin-top: 14px; font-size: 14px; color: var(--muted); }
 .screen figcaption b { color: var(--text); font-weight: 600; display: block; margin-bottom: 3px; }
 
-/* The window is a tall column; show the top and let people open the whole thing. */
+/* The window is a tall column; the page shows its top. The whole image is in the repository
+   and rendered in full by the README, which is where a tall screenshot belongs. */
 .screen .window-shot {
   max-height: 620px;
   object-fit: cover;
