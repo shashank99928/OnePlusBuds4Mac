@@ -174,9 +174,11 @@ func main() {
         exit(1)
     }
 
-    // Not goldens: the icon, the favicon and the social card are written elsewhere, and the
-    // window's derivative is named explicitly because the hero is cropped from it.
-    let notGoldens: Set<String> = ["icon.png", "favicon.png", "og.png", "window.png"]
+    // Not goldens: the icon, the favicon and the social card are written elsewhere, the
+    // window's derivative is named explicitly because the hero is cropped from it, and the
+    // sculpture is drawn by Tools/make-sculpture.swift and consumed by the WebGL hero as-is —
+    // re-encoding it to JPEG would put a second, lossier copy of it on the site.
+    let notGoldens: Set<String> = ["icon.png", "favicon.png", "og.png", "window.png", "sculpture.png"]
     let goldenNames = ((try? FileManager.default.contentsOfDirectory(atPath: assets.path)) ?? [])
         .filter { $0.hasSuffix(".png") && !notGoldens.contains($0) }
         .sorted()

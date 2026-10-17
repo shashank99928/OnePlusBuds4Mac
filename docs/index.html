@@ -166,6 +166,9 @@
 
   <!-- ------------------------------- hero ------------------------------- -->
   <section class="hero">
+    <!-- The liquid sculpture. Drawn by docs/sculpture.js; the canvas stays hidden unless the
+         effect can actually run, so without WebGL2 this element is inert. -->
+    <div class="hero-field" aria-hidden="true"><canvas></canvas></div>
     <div class="wrap">
       <span class="eyebrow"><span class="dot" aria-hidden="true"></span> Tested against the hardware, not the spec sheet</span>
 
@@ -687,5 +690,8 @@
   </div>
 </footer>
 
+<!-- The hero's sculpture. Optional by design: it returns early unless the browser can run it
+     and the layout leaves room, and it asks for no third-party origin. -->
+<script type="module" src="sculpture.js"></script>
 </body>
 </html>

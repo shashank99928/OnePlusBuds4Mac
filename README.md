@@ -7,7 +7,10 @@ daemon, no network.
 There is a website, published from `docs/` with GitHub Pages, at
 <https://shashank99928.github.io/OnePlusBuds4Mac/>. The site is `docs/index.html` and
 `docs/styles.css` with the images in `docs/assets/`, plus `robots.txt`, `sitemap.xml` and a
-`404.html`; it has an FAQ section with `FAQPage` structured data.
+`404.html`; it has an FAQ section with `FAQPage` structured data. The only script on it is
+`docs/sculpture.js`, one same-origin ES module that draws the hero's liquid sculpture with
+WebGL2; when the browser cannot run it the page is exactly what it was, and no third-party
+code, font or image is ever fetched.
 
 ![The main window](docs/assets/window.jpg)
 
@@ -230,12 +233,15 @@ swift Tools/make-dmg-background.swift   # -> Resources/dmg-background{,@2x}.png
 swift .build/debug/OnePlusBuds4 --render-snapshots
                                         # -> docs/assets/{window,panel,panel-warming,panel-disconnected}.png
 swift Tools/make-site-assets.swift      # -> docs/assets/*.jpg, hero.jpg, og.png
+swift Tools/make-sculpture.swift        # -> docs/assets/sculpture.png
 ./Tools/freeze-fixtures.sh              # re-freeze the fixture corpus from the .hex record
 ```
 
 `--render-snapshots` takes an optional directory and defaults to `docs/assets` — the goldens'
 own directory — and draws every surface and exits. Because the images the README shows
 and the images the test compares are the same files, there is no second copy to go stale.
+`make-sculpture.swift` is the odd one out: it draws the hero's artwork rather than a
+screenshot, so `make-site-assets.swift` deliberately skips it when deriving the JPEGs.
 
 All outputs are committed, so `./build.sh` and `./make-dmg.sh` work without running them.
 
@@ -289,10 +295,12 @@ and restores what it found. It only ever writes values from the allow-listed set
 | `Tests/Fixtures/buds4-frames.hex` | The capture of record |
 | `docs/index.html` | The website, published from `docs/` with GitHub Pages |
 | `docs/styles.css` | The website's styling |
-| `docs/assets/` | The goldens and their web JPEG derivatives, plus `hero.jpg`, `og.png`, `icon.png`, `favicon.png` |
+| `docs/sculpture.js` | The hero's WebGL2 sculpture; the site's only script, optional by design |
+| `docs/assets/` | The goldens and their web JPEG derivatives, plus `hero.jpg`, `og.png`, `icon.png`, `favicon.png`, `sculpture.png` |
 | `Tools/freeze-fixtures.sh` | Regenerates the frozen corpus from the capture |
 | `Tools/check-symbols.swift` | Validates every SF Symbol name in the source against the running OS |
 | `Tools/make-icon.swift` | Renders the app icon, the `.icns` and the web icon |
+| `Tools/make-sculpture.swift` | Draws the hero's artwork (`docs/assets/sculpture.png`) |
 | `Tools/make-site-assets.swift` | Derives the website's JPEGs, hero crop and social card from the goldens |
 | `Tools/make-dmg-background.swift` | Renders the disk-image background |
 | `Tools/sniff.swift` | Read-only RFCOMM recon logger (development) |

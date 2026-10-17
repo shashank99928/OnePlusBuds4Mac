@@ -1,6 +1,8 @@
 /* OnePlus Buds 4 for macOS — site stylesheet.
-   No webfonts and no third-party requests: the palette is the app's own, the type is the
-   system's, and the page is one HTTP round trip plus the images. */
+   No webfonts and no third-party requests: the palette is the app's own and the type is the
+   system's. The page is the document, one stylesheet and its own images, plus a single
+   same-origin module that draws the hero's sculpture when the browser and the layout support
+   it. Without that module the page is exactly what it was. */
 
 :root {
   /* Mirrors Sources/BudsBarKit/Theme.swift so the page and the app are the same blue. */
@@ -142,11 +144,38 @@ nav a:hover { color: var(--text); text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .btn, .btn:hover { transition: none; transform: none; }
+  .hero-field canvas { transition: none; }
 }
 
 /* ---------- hero ---------- */
 
-.hero { padding: 76px 0 24px; }
+.hero { position: relative; padding: 76px 0 24px; }
+
+/* The liquid sculpture, painted behind the hero's copy. It is pure decoration and it is
+   optional: the field's height is set from JS only once there is room for it, and the canvas
+   only fades in on the engine's first frame, so without WebGL2 (or on a phone, or with
+   reduced motion, or Save-Data) none of this appears and the hero is exactly as it was. */
+.hero-field {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.hero-field canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 1.4s ease 0.05s;
+  /* The strands fade out well before the headline: --field-mask is the measured right edge of
+     the copy, so a particle flung outwards is invisible by the time it could reach any text. */
+  -webkit-mask-image: linear-gradient(90deg, transparent calc(var(--field-mask, 62%) - 14%), #000 var(--field-mask, 62%));
+          mask-image: linear-gradient(90deg, transparent calc(var(--field-mask, 62%) - 14%), #000 var(--field-mask, 62%));
+}
+.hero-field[data-gl="on"] canvas { opacity: 1; }
+
+.hero > .wrap { position: relative; z-index: 1; }
 
 .eyebrow {
   display: inline-flex;
