@@ -15,6 +15,15 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// Raw protocol logging, off unless asked for — the buds push status every few seconds.
     static let isTracing = ProcessInfo.processInfo.environment["BUDSBAR_TRACE"] != nil
 
+    /// True for a `--selfcheck` run: the binary is the app, but the job is a protocol test, so
+    /// it must not page the buds or open a control channel.
+    static let isSelfChecking = CommandLine.arguments.contains("--selfcheck")
+
+    /// Drives a fixed sequence so a raw-frame capture contains one clean example of every
+    /// frame type. Fixtures are captured, never typed: every hand-written one so far has had
+    /// length fields that disagree with its own bytes.
+    static let isHarvesting = ProcessInfo.processInfo.environment["BUDSBAR_HARVEST"] != nil
+
     /// SDP service UUID for OPPO/realme's `oppointeraction` control service.
     /// realme is an OPPO sub-brand and shares the protocol.
     private static let controlServiceUUID: [UInt8] = [
@@ -35,9 +44,21 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     var battery = Battery()
     var placement = Placement()
     var mode: NoiseMode?
-    /// How hard noise cancellation is working. nil while the buds are on Smart, which this
-    /// app does not model, or before the first report has arrived.
+    /// How hard cancellation is working. Carried in the same mask as the mode, so it is
+    /// always known while Noise cancellation is on.
     var ancLevel: ANCLevel?
+    /// Sound Master EQ preset, as last read back.
+    var eqPreset: EQPreset?
+    /// The EQ preset is the custom profile, when one exists. Read-only: the upload format is
+    /// decoded but has never been transmitted by anyone, and there is no documented way to
+    /// delete a profile, so the app does not write one into the buds' flash.
+    var hasCustomEQProfile = false
+    /// BassWave level, −5…+5.
+    var bassWave: Int?
+    /// Firmware string, e.g. `1,2,138,2,2,138,3,1,01,3,2,105`.
+    var firmware: String?
+    /// The touch-gesture table, as read back. Written one record at a time.
+    var touchRules: [BudsProtocol.TouchRule] = []
     /// Set while a connect/disconnect is in flight so the toggle can't be double-fired.
     var isBusy = false
     var lastError: String?
@@ -161,6 +182,9 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     override init() {
         super.init()
+        // A `--selfcheck` run is a build-time protocol test, not a launch, so nothing here
+        // touches the radio — no SDP query, no page attempt, no control channel.
+        if Self.isSelfChecking { return }
         device = Self.discoverDevice()
         syncName()
 
@@ -182,6 +206,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             self.refreshConnectionState()
             self.ticks += 1
             if self.ticks % Self.ticksPerConnectAttempt == 0 { self.attemptAutoConnect() }
+            // The settings the buds will not push reliably need asking for. Cheap beside the
+            // connect attempt and the only thing that keeps the mode honest when the phone is
+            // the one changing it.
+            if self.ticks % Self.ticksPerStateRefresh == 0 { self.refreshDeviceState() }
         }
         pollTimer?.tolerance = Self.pollInterval / 2   // no deadline worth a forced wakeup
         attemptAutoConnect()
@@ -196,6 +224,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// so they run every tenth poll, i.e. every 20s.
     /// ponytail: fixed interval, not a backoff. Tune these two before adding one.
     private static let ticksPerConnectAttempt = 10
+
+    /// How often the buds are asked for the settings they do not push. Four seconds is well
+    /// inside the time it takes to walk over and open the phone's app to compare against it.
+    private static let ticksPerStateRefresh = 2
 
     private func attemptAutoConnect() {
         // Pairing can happen while we are running, so keep looking until something turns up.
@@ -453,6 +485,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             placement = Placement()
             mode = nil
             ancLevel = nil
+            eqPreset = nil
+            bassWave = nil
+            touchRules = []
+            hasCustomEQProfile = false
         }
     }
 
@@ -524,20 +560,67 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     // MARK: - Noise control
 
     func set(mode requested: NoiseMode) {
-        // Switching to ANC has to name a level, since the level *is* the mode byte. Reusing
-        // the level the buds last reported is what makes the button a no-op for anyone who
-        // has already chosen one on the phone; `encodeSetNoiseMode` falls back to Max when
-        // we have never seen a level (fresh launch, or the buds are on Smart).
-        // Deliberately not updating `mode` here. The buds echo a state notification
-        // once they have actually switched, and that echo is what the UI renders —
-        // it is also what keeps this panel and realme Link on the phone in agreement.
-        send(BudsProtocol.encodeSetNoiseMode(requested, level: ancLevel))
+        // The mask carries both, and the level is the same field, so switching to Noise
+        // cancellation has to name one. Reusing the level the buds last reported is what makes
+        // the button a no-op for someone who has already chosen one on the phone.
+        let level = requested == .noiseCancellation ? (ancLevel ?? .high) : nil
+        send(BudsProtocol.encodeSetNoiseMask(level?.mask ?? requested.mask))
+        refreshAfterSet()
+        // `mode` is deliberately left alone: the buds are asked to read it back and the
+        // readback is what the UI renders, so this panel and the phone cannot disagree.
     }
 
-    /// Same contract as `set(mode:)` — the level shown is the level the buds reported, not
-    /// the one that was asked for, so the panel and realme Link cannot drift apart.
     func set(ancLevel requested: ANCLevel) {
-        send(BudsProtocol.encodeSetNoiseMode(.noiseCancellation, level: requested))
+        send(BudsProtocol.encodeSetNoiseMask(requested.mask))
+        refreshAfterSet()
+    }
+
+    func set(eqPreset requested: EQPreset) {
+        // Client-side validation, because the firmware has none: it accepts 0x00–0x07 and
+        // stores whatever it is given, and a stored out-of-range preset leaves the phone's own
+        // UI showing no selection at all.
+        send(BudsProtocol.encodeSetEQPreset(requested))
+        refreshAfterSet()
+    }
+
+    func set(bassWave level: Int) {
+        send(BudsProtocol.encodeSetBassWave(level))
+        refreshAfterSet()
+    }
+
+    /// Rings the given buds. There is no stop opcode — the tone self-terminates — so this is
+    /// deliberately fire-and-forget.
+    func find(_ slots: [BudsProtocol.BatterySlot] = [.left, .right]) {
+        send(BudsProtocol.encodeFind(slots))
+    }
+
+    /// What a gesture currently does, taken from the left earbud. The phone keeps the two in
+    /// step, so the left is the row the UI shows and the one it writes back to both.
+    func touchAction(_ gesture: BudsProtocol.MediaGesture) -> BudsProtocol.GestureAction? {
+        touchRules.first {
+            $0.side == BudsProtocol.TouchRule.left
+                && $0.type == BudsProtocol.TouchRule.media
+                && $0.gesture == gesture.rawValue
+        }.flatMap { BudsProtocol.GestureAction(rawValue: $0.action) }
+    }
+
+    /// Re-points one gesture on **both** earbuds.
+    ///
+    /// Only the two changed records are sent, so a byte mis-read anywhere else in the table
+    /// cannot be written back, and the two sides cannot drift apart — which is exactly the
+    /// state the phone's screen cannot represent.
+    func setTouch(gesture: BudsProtocol.MediaGesture, action: BudsProtocol.GestureAction) {
+        let rules = [BudsProtocol.TouchRule.left, BudsProtocol.TouchRule.right].map {
+            BudsProtocol.TouchRule(side: $0, type: BudsProtocol.TouchRule.media,
+                                   gesture: gesture.rawValue, action: action.rawValue)
+        }
+        send(BudsProtocol.encodeSetTouch(rules))
+        // The table is read back rather than assumed: the firmware acknowledges the write long
+        // before it takes effect, and the round trip is what the row renders.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self, self.isControlChannelOpen else { return }
+            self.send(BudsProtocol.encodeRequest(.touch))
+        }
     }
 
     @discardableResult
@@ -574,6 +657,67 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
                 channel.writeAsync(raw.baseAddress, length: UInt16(raw.count), refcon: nil)
             }
         }
+        // A fresh connection knows nothing: the buds do not push their settings on their own,
+        // so everything the panel shows is asked for once the channel is up.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard self.isControlChannelOpen else { return }
+            self.refreshDeviceState()
+            self.readAudioSettings()
+        }
+        if Self.isHarvesting {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.runHarvest() }
+        }
+    }
+
+    /// Walks every mode, level, EQ preset, and BassWave step, then restores what it found, so a
+    /// raw capture taken alongside contains one clean example of every frame type.
+    ///
+    /// This is the recon workflow, kept in the app rather than in a throwaway hook: it is the
+    /// only way to obtain fixtures that are internally consistent, and it matters that it is
+    /// reproducible, because the alternative — transcribing bytes by hand — has already
+    /// produced fixtures whose length fields disagree with their own payloads.
+    private func runHarvest() {
+        let readANC = BudsProtocol.encodeRequest(.anc, payload: [0x01, 0x01])
+        let readEQ = BudsProtocol.encodeRequest(.eqPreset)
+        let readBass = BudsProtocol.encodeRequest(.bassWave)
+
+        var steps: [(String, [UInt8])] = []
+        for mode in NoiseMode.allCases {
+            steps.append(("set \(mode.label) 0x\(String(format: "%04x", mode.mask))",
+                          BudsProtocol.encodeSetNoiseMask(mode.mask)))
+            steps.append(("read anc", readANC))
+        }
+        for level in ANCLevel.allCases {
+            steps.append(("set nc \(level.label) 0x\(String(format: "%04x", level.mask))",
+                          BudsProtocol.encodeSetNoiseMask(level.mask)))
+            steps.append(("read anc", readANC))
+        }
+        steps += [
+            ("set eq bass", BudsProtocol.encodeSetEQPreset(.bass)),
+            ("read eq", readEQ),
+            ("set eq balanced (restore)", BudsProtocol.encodeSetEQPreset(.balanced)),
+            ("read eq", readEQ),
+            ("set basswave +2", BudsProtocol.encodeSetBassWave(2)),
+            ("read basswave", readBass),
+            ("set basswave 0 (restore)", BudsProtocol.encodeSetBassWave(0)),
+            ("read basswave", readBass),
+            ("read custom eq", BudsProtocol.encodeRequest(.customEQ)),
+            ("read touch", BudsProtocol.encodeRequest(.touch)),
+            // Leave the buds as they were found.
+            ("restore off", BudsProtocol.encodeSetNoiseMask(NoiseMode.off.mask)),
+            ("read anc", readANC),
+        ]
+
+        for (index, step) in steps.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(index) * 2.0) {
+                self.testLog("HARVEST \(step.0) :: \(BudsProtocol.hex(step.1))")
+                _ = self.send(step.1)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(steps.count) * 2.0 + 2) {
+            self.testLog("HARVEST done")
+            exit(0)
+        }
     }
 
     func rfcommChannelData(_ channel: IOBluetoothRFCOMMChannel!, data dataPointer: UnsafeMutableRawPointer!, length dataLength: Int) {
@@ -600,15 +744,65 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         }
 
         rxBuffer.append(contentsOf: chunk)
-        // Raw trace, for decoding the payloads that are still unknown. Opt-in: the buds
-        // push status every few seconds, so a shipped build would spew continuously.
-        if Self.isTracing {
-            FileHandle.standardError.write(Data("RX \(BudsProtocol.hex(chunk))\n".utf8))
-        }
 
         // RFCOMM delivers arbitrary chunks; frames split across callbacks.
         let frames = BudsProtocol.drainFrames(from: &rxBuffer)
+        // Raw trace, for decoding payloads that are still unknown and for capturing fixtures.
+        // Both forms: the bytes verbatim, so a capture can be replayed, and the decode, so a
+        // human can read it. Opt-in — the buds push status every few seconds.
+        if Self.isTracing {
+            for frame in frames {
+                FileHandle.standardError.write(Data(
+                    ("RX " + BudsProtocol.hex(frame.raw) + "   |   "
+                     + BudsProtocol.describe(frame) + "\n").utf8))
+            }
+        }
         for frame in frames { apply(frame) }
+    }
+
+    // MARK: - Reading state
+
+    /// Re-reads the settings the firmware does not reliably push.
+    ///
+    /// ANC is the important one: the push that carries it is lossy on this hardware (the low
+    /// byte alone, which cannot tell Transparency from Adaptive), and *no* push arrived at all
+    /// for our own writes in testing. Without this poll the panel would keep showing whatever
+    /// was last commanded, or whatever the phone changed minutes ago.
+    private func refreshDeviceState() {
+        guard isControlChannelOpen else { return }
+        // Suppressed during a fixture capture: the periodic readbacks would interleave with
+        // the scripted sequence and make the capture harder to read than it needs to be.
+        guard !Self.isHarvesting else { return }
+        for packet in [
+            BudsProtocol.encodeRequest(.anc, payload: [0x01, 0x01]),
+            BudsProtocol.encodeRequest(.battery),
+            BudsProtocol.encodeRequest(.wear),
+        ] { send(packet) }
+    }
+
+    /// The audio settings, which change only when asked to, plus the firmware string and the
+    /// gesture table. Read once per connection and once after each write.
+    private func readAudioSettings() {
+        guard isControlChannelOpen else { return }
+        for packet in [
+            BudsProtocol.encodeRequest(.eqPreset),
+            BudsProtocol.encodeRequest(.bassWave),
+            BudsProtocol.encodeRequest(.customEQ),
+            BudsProtocol.encodeRequest(.firmware),
+            BudsProtocol.encodeRequest(.touch),
+        ] { send(packet) }
+    }
+
+    /// A write is acknowledged long before it is reflected, so the readback is deferred. Both
+    /// are also covered by the poll; this only makes the panel feel immediate.
+    private func refreshAfterSet() {
+        for delay in [0.35, 1.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.isControlChannelOpen else { return }
+                self.refreshDeviceState()
+                self.readAudioSettings()
+            }
+        }
     }
 
     func rfcommChannelClosed(_ channel: IOBluetoothRFCOMMChannel!) {
@@ -616,47 +810,71 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     }
 
     private func apply(_ frame: BudsProtocol.Frame) {
-        for update in BudsProtocol.interpret(frame) {
-            switch update {
-            case .noiseMode(let value):
-                if mode != value {
-                    // Not logging `value.wire` — for ANC that is the default level's byte,
-                    // not the one that arrived. The LEVEL line below carries that detail.
-                    FileHandle.standardError.write(Data("MODE reported \(value.label)\n".utf8))
-                }
-                mode = value
-            case .ancLevel(let value):
-                if ancLevel != value {
-                    FileHandle.standardError.write(
-                        Data("LEVEL reported \(value?.label ?? "unknown (Smart)")\n".utf8))
-                }
-                ancLevel = value
-            case .battery(let slot, let level):
-                // Assigned, not merged: nil here means the buds reported the slot as
-                // unknown, and a slot they did not mention produces no update at all.
-                switch slot {
-                case .left: battery.left = level
-                case .right: battery.right = level
-                case .enclosure: battery.enclosure = level
-                }
+        // Two replies do not fit the counted update shape and are decoded on their own.
+        if let version = BudsProtocol.firmware(from: frame) {
+            if firmware != version { firmware = version }
+            return
+        }
+        if let rules = BudsProtocol.touchRules(from: frame) {
+            if touchRules != rules { touchRules = rules }
+            return
+        }
+        // The custom-EQ reply is a whole profile table when one exists and a bare `00 00`
+        // when none does. Only the first byte past the status is needed to know which: the
+        // profile editor itself is out of scope, but the preset picker has to know whether
+        // the custom slot is selectable at all.
+        if frame.cmd == BudsProtocol.Command.customEQ.rawValue,
+           frame.messageType == BudsProtocol.MessageType.reply.rawValue {
+            hasCustomEQProfile = frame.payload.count >= 2 && frame.payload[1] > 0
+            return
+        }
+        for update in BudsProtocol.interpret(frame) { apply(update) }
+        // The same bodies come back as replies to our own requests, one status byte longer.
+        for update in BudsProtocol.decode(reply: frame) { apply(update) }
+    }
 
-            case .placement(let slot, let where_):
-                guard placement[slot] != where_ else { break }
-                FileHandle.standardError.write(Data("PLACEMENT \(slot) \(where_)\n".utf8))
-                placement[slot] = where_
-                // Only on the move into the case, not on every report of it. A bud put away
-                // drops out of the battery report entirely, and an absent slot keeps its last
-                // reading — so the reading it had while in use would stand on the panel
-                // indefinitely. Clearing it once is enough: an awake case goes on reporting
-                // the bud inside it, and the next report fills the value back in within
-                // seconds. A case that has gone to sleep reports nothing, which is when the
-                // stale number used to sit there, and now the cell honestly reads unknown.
-                if where_ == .inCase {
-                    switch slot {
-                    case .left: battery.left = nil
-                    case .right: battery.right = nil
-                    case .enclosure: break
-                    }
+    private func apply(_ update: BudsProtocol.Update) {
+        switch update {
+        case .eqPreset(let value):
+            eqPreset = value
+        case .bassWave(let value):
+            bassWave = value
+        case .noiseMode(let value):
+            if mode != value {
+                FileHandle.standardError.write(
+                    Data("MODE reported \(value.label) 0x\(String(format: "%04x", value.mask))\n".utf8))
+            }
+            mode = value
+        case .ancLevel(let value):
+            if ancLevel != value {
+                FileHandle.standardError.write(Data("LEVEL reported \(value.label)\n".utf8))
+            }
+            ancLevel = value
+        case .battery(let slot, let level):
+            // Assigned, not merged: nil here means the buds reported the slot as
+            // unknown, and a slot they did not mention produces no update at all.
+            switch slot {
+            case .left: battery.left = level
+            case .right: battery.right = level
+            case .enclosure: battery.enclosure = level
+            }
+
+        case .placement(let slot, let where_):
+            guard placement[slot] != where_ else { break }
+            FileHandle.standardError.write(Data("PLACEMENT \(slot) \(where_)\n".utf8))
+            placement[slot] = where_
+            // Only on the move into the case, not on every report of it. A bud put away
+            // drops out of the battery report entirely, and an absent slot keeps its last
+            // reading — so the reading it had while in use would stand on the panel
+            // indefinitely. Clearing it once is enough: an awake case goes on reporting
+            // the bud inside it, and the next report fills the value back in within
+            // seconds. A case that has gone to sleep reports nothing, which is when the
+            // stale number used to sit there, and now the cell honestly reads unknown.
+            if where_.isStowed {
+                switch slot {
+                case .left: battery.left = nil
+                case .right: battery.right = nil
+                case .enclosure: break
                 }
             }
         }
@@ -671,12 +889,13 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     private func startModeTest() {
         guard isControlChannelOpen else { return }
-        testQueue = ANCLevel.allCases.map { level in
-            ("ANC \(level.label), value \(level.wire)", { [weak self] in self?.set(ancLevel: level) })
-        } + [
-            ("Transparency", { [weak self] in self?.set(mode: .transparency) }),
-            ("Off", { [weak self] in self?.set(mode: .off) }),
-        ]
+        testQueue = NoiseMode.allCases.map { mode in
+            ("\(mode.label) 0x\(String(format: "%04x", mode.mask))",
+             { [weak self] in self?.set(mode: mode) })
+        } + ANCLevel.allCases.map { level in
+            ("ANC \(level.label) 0x\(String(format: "%04x", level.mask))",
+             { [weak self] in self?.set(ancLevel: level) })
+        }
         testLog("cycling modes, 3s apart")
         testTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             guard let self else { return }

@@ -277,8 +277,11 @@ struct BatteryHero: View {
 
 // MARK: - Noise control
 
-/// The three modes as equal pills: glyph and chevron on top, label below, accent-filled
-/// when active.
+/// The four modes as equal pills: glyph on top, label below, accent-filled when active.
+///
+/// Four across rather than the three this started with, because Adaptive is a real fourth
+/// mode and not a variant of cancellation — the phone shows it as a peer of the others, and
+/// leaving it out meant the one mode that adapts by itself was unreachable.
 struct ModeGrid: View {
     @Bindable var buds: Buds
 
@@ -296,22 +299,19 @@ struct ModeGrid: View {
             buds.set(mode: mode)
         } label: {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 0) {
-                    Image(systemName: mode.symbol)
-                        .font(.system(size: 20, weight: .medium))
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .opacity(0.45)
-                }
+                Image(systemName: mode.symbol)
+                    .font(.system(size: 20, weight: .medium))
+                // Two lines, reserved, because "Noise cancellation" does not fit one on a
+                // 76pt pill and truncating it to "Noise canc…" looks like a bug.
                 Text(mode.label)
                     .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+                    .minimumScaleFactor(0.7)
             }
             .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.92)))
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(selected ? Theme.accent.opacity(0.92) : Theme.card))
@@ -327,8 +327,8 @@ struct ModeGrid: View {
     }
 }
 
-/// The strength of cancellation, shown only while ANC is the active mode. Stages as
-/// capsules; nothing selected while the buds are on Smart, which is the honest reading.
+/// The strength of cancellation, shown only while Noise cancellation is the active mode.
+/// Four capsules, the same four the phone offers.
 struct LevelSelector: View {
     @Bindable var buds: Buds
 
@@ -339,7 +339,7 @@ struct LevelSelector: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.secondary)
                 Spacer(minLength: 0)
-                Text(buds.ancLevel?.label ?? "Smart")
+                Text(buds.ancLevel?.label ?? "—")
                     .font(.system(size: 12, weight: .semibold))
             }
 
@@ -349,7 +349,7 @@ struct LevelSelector: View {
                 }
             }
 
-            Text(buds.ancLevel?.detail ?? "The buds are choosing the level")
+            Text(buds.ancLevel?.detail ?? "Waiting for the buds to report a level")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -399,12 +399,13 @@ struct NoiseControlSection: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.secondary)
                 .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
-                    Text("Noise cancellation blocks outside sound — Max for planes and "
-                       + "trains, Moderate for streets, Mild for home and office. "
-                       + "Transparency lets sound through so you can hear your "
-                       + "surroundings. Off does neither.")
+                    Text("Noise cancellation blocks outside sound, at whichever level "
+                       + "you pick — High for planes and trains, Low for home. Adaptive "
+                       + "switches between cancelling and letting sound in as your "
+                       + "surroundings change. Transparency lets sound through so you can "
+                       + "hear around you. Off does neither.")
                         .font(.callout)
-                        .frame(width: 240)
+                        .frame(width: 260)
                         .padding(12)
                 }
             }
@@ -428,6 +429,336 @@ struct NoiseControlSection: View {
         }
         .animation(.smooth(duration: 0.25), value: buds.mode)
         .animation(.smooth(duration: 0.25), value: buds.isControlChannelOpen)
+    }
+}
+
+// MARK: - Sound
+
+/// Sound Master EQ. The three presets the firmware ships, plus the custom slot — offered only
+/// once the buds actually hold a profile, because selecting an empty one leaves the phone's own
+/// screen with nothing ticked.
+struct EQPresetSelector: View {
+    @Bindable var buds: Buds
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("Sound Master EQ")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                Spacer(minLength: 0)
+                Text(buds.eqPreset?.label ?? "—")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+
+            HStack(spacing: 8) {
+                ForEach(EQPreset.allCases) { preset in
+                    segment(preset)
+                }
+            }
+        }
+    }
+
+    private func segment(_ preset: EQPreset) -> some View {
+        let available = preset != .custom || buds.hasCustomEQProfile
+        let selected = buds.eqPreset == preset
+        return Button {
+            buds.set(eqPreset: preset)
+        } label: {
+            Text(preset.label)
+                .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(Theme.secondary))
+                .lineLimit(2, reservesSpace: true)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(selected ? Theme.accent.opacity(0.9) : Color.white.opacity(0.07)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(selected ? Color.white.opacity(0.30) : Theme.cardStroke,
+                                lineWidth: 1))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(!available)
+        .opacity(available ? 1 : 0.45)
+        .help(available ? preset.label : "Save a custom profile in the phone app first")
+        .accessibilityLabel(preset.label)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// BassWave: the bass emphasis, one step at a time from −5 to +5.
+///
+/// Eleven tappable ticks rather than a slider. The reference hardware's own range is five
+/// either side of flat, so the whole scale fits on screen at once — which a slider would only
+/// hide behind a drag — and a plain `Slider` is an AppKit control the README's screenshots
+/// cannot rasterise.
+struct BassWaveControl: View {
+    @Bindable var buds: Buds
+
+    private static let range = -5...5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("BassWave")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.secondary)
+                Spacer(minLength: 0)
+                Text(levelText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 4) {
+                ForEach(Array(Self.range), id: \.self) { value in
+                    tick(value)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("BassWave level")
+    }
+
+    /// Signed at both ends: "5" for a bass boost reads as a level, "+5" reads as a boost.
+    private var levelText: String {
+        guard let level = buds.bassWave else { return "—" }
+        if level > 0 { return "+\(level)" }
+        return "\(level)"
+    }
+
+    private func tick(_ value: Int) -> some View {
+        let selected = buds.bassWave == value
+        // The centre gets a brighter resting fill so flat reads as flat even when the buds
+        // have not answered yet and nothing is selected.
+        let resting = value == 0 ? 0.16 : 0.08
+        return Button {
+            buds.set(bassWave: value)
+        } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(selected ? Theme.accent.opacity(0.9) : Color.white.opacity(resting))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(selected ? Color.white.opacity(0.30) : Theme.cardStroke,
+                                lineWidth: 1))
+                .frame(height: 24)
+                .frame(maxWidth: .infinity)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(value > 0 ? "Bass plus \(value)" : "Bass \(value)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The audio effects the buds implement themselves: the EQ preset and BassWave. The phone's
+/// third row here, Golden Sound, is a hearing test that writes a calibration table this app
+/// does not decode; 3D Audio is processed on the phone, not the buds.
+struct SoundSection: View {
+    @Bindable var buds: Buds
+
+    private var enabled: Bool { buds.isControlChannelOpen }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Sound")
+                .font(.system(size: 15, weight: .semibold))
+
+            EQPresetSelector(buds: buds)
+            BassWaveControl(buds: buds)
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.5)
+    }
+}
+
+// MARK: - Find my earbuds
+
+/// Rings a bud so it can be found. The tone stops itself, and there is no opcode to stop it
+/// early, so nothing here offers a cancel that could not be honoured.
+struct FindMyEarbudsSection: View {
+    @Bindable var buds: Buds
+
+    private var enabled: Bool { buds.isControlChannelOpen }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Find my earbuds")
+                .font(.system(size: 15, weight: .semibold))
+
+            Text("Plays a tone in the earbuds. It stops on its own.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.secondary)
+
+            HStack(spacing: 8) {
+                ringButton("Left", slots: [.left])
+                ringButton("Right", slots: [.right])
+                ringButton("Both", slots: [.left, .right])
+            }
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.5)
+    }
+
+    private func ringButton(_ title: String, slots: [BudsProtocol.BatterySlot]) -> some View {
+        Button {
+            buds.find(slots)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2.fill").font(.system(size: 11, weight: .medium))
+                Text(title).font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(0.92))
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.07)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.cardStroke, lineWidth: 1))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Play a tone in the \(title) earbud")
+    }
+}
+
+// MARK: - Earbud controls
+
+/// The touch-gesture table, one row per gesture.
+///
+/// Only the media context and only the four gestures the phone's own screen offers. The
+/// in-call context is left alone deliberately: its codes are undocumented, and writing a
+/// guess could rebind the gesture that ends a call.
+struct EarbudControlsSection: View {
+    @Bindable var buds: Buds
+
+    private var enabled: Bool { buds.isControlChannelOpen }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Earbud controls")
+                .font(.system(size: 15, weight: .semibold))
+
+            Text("What each touch gesture does. Both earbuds are changed together.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.secondary)
+
+            VStack(spacing: 6) {
+                ForEach(BudsProtocol.MediaGesture.allCases) { gesture in
+                    GestureRow(buds: buds, gesture: gesture)
+                }
+            }
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.5)
+    }
+}
+
+/// One gesture: what it does now, and a menu to re-point it. The menu offers only the actions
+/// the phone offers for that gesture, since the firmware itself validates nothing.
+struct GestureRow: View {
+    @Bindable var buds: Buds
+    var gesture: BudsProtocol.MediaGesture
+
+    private var current: BudsProtocol.GestureAction? {
+        buds.touchAction(gesture)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: gesture.symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.chip))
+
+            Text(gesture.label)
+                .font(.system(size: 13, weight: .semibold))
+
+            Spacer(minLength: 6)
+
+            Menu {
+                Picker("", selection: Binding(
+                    get: { current ?? .none },
+                    set: { buds.setTouch(gesture: gesture, action: $0) }
+                )) {
+                    ForEach(gesture.actions) { action in
+                        Label(action.label, systemImage: action.symbol).tag(action)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                HStack(spacing: 5) {
+                    Text(current?.label ?? "Unknown")
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .opacity(0.5)
+                }
+                .foregroundStyle(current == nil ? AnyShapeStyle(Theme.secondary)
+                                                : AnyShapeStyle(.white.opacity(0.92)))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.white.opacity(0.07)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Theme.cardStroke, lineWidth: 1))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("\(gesture.label) action")
+            .accessibilityValue(current?.label ?? "Unknown")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard(cornerRadius: 14)
+    }
+}
+
+// MARK: - About
+
+/// Read-only facts about the buds themselves, as the phone's "About" screen shows them.
+struct DeviceDetailsSection: View {
+    @Bindable var buds: Buds
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("About the earbuds")
+                .font(.system(size: 15, weight: .semibold))
+
+            row("Firmware", buds.firmware ?? "—", monospaced: true)
+            row("Custom EQ profile", buds.hasCustomEQProfile ? "Saved" : "None")
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard(cornerRadius: 16)
+    }
+
+    private func row(_ title: String, _ value: String, monospaced: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 12, weight: .medium,
+                              design: monospaced ? .monospaced : .default))
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

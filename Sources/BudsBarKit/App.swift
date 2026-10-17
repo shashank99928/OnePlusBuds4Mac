@@ -12,7 +12,23 @@ enum AppInfo {
     }
 }
 
-@main
+/// Entry point.
+///
+/// The app lives in a library target so the protocol — and the views — can be exercised by
+/// `swift test`; the executable target is four lines because of it (see
+/// `Sources/OnePlusBuds4/main.swift`). That costs one `public` symbol and buys the checks a
+/// place to run that is not "at launch, in the app the user is trying to use".
+public enum BudsBar {
+    public static func launch() {
+        // Handled here rather than in `applicationDidFinishLaunching` so a check run never
+        // constructs NSApplication, a status item, a popover, or a Bluetooth session. The
+        // previous version checked after the app had already started — which is why a broken
+        // fixture took the running app down with it instead of printing a failure.
+        if BudsProtocol.isSelfCheckRun { BudsProtocol.runSelfCheckAndExit() }
+        BudsBarApp.main()
+    }
+}
+
 struct BudsBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
@@ -112,9 +128,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         buds.shutdown()
     }
 
+    /// Debug-build reporting of the protocol checks. Loud on failure, but not fatal: a broken
+    /// check in a running build is easier to diagnose than an app that refuses to start.
+    private func report(_ result: BudsProtocol.SelfCheckResult) {
+        for failure in result.failures {
+            FileHandle.standardError.write(Data("selfCheck FAILED: \(failure)\n".utf8))
+        }
+        if result.passed {
+            FileHandle.standardError.write(
+                Data("selfCheck passed: \(result.checks) checks\n".utf8))
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `--selfcheck` never gets this far: `BudsBar.launch()` intercepts it before
+        // NSApplication exists. What is left is the debug-only report, so a broken check is
+        // visible while developing without an app that refuses to start.
         #if DEBUG
-        BudsProtocol.selfCheck()
+        report(BudsProtocol.selfCheck())
         #endif
 
         // The design is a dark "night" surface, so pin the app to dark rather than let a

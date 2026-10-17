@@ -19,6 +19,8 @@ struct PanelView: View {
                 if buds.isConnected {
                     BatteryChipsRow(buds: buds)
                     NoiseControlSection(buds: buds)
+                    SoundSection(buds: buds)
+                    FindMyEarbudsSection(buds: buds)
                 } else {
                     BudsDisconnectedNote(buds: buds)
                 }

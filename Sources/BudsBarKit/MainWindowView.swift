@@ -77,6 +77,10 @@ struct MainColumn: View {
                 BatteryHero(buds: buds)
                 BatteryChipsRow(buds: buds)
                 NoiseControlSection(buds: buds)
+                SoundSection(buds: buds)
+                EarbudControlsSection(buds: buds)
+                FindMyEarbudsSection(buds: buds)
+                DeviceDetailsSection(buds: buds)
             } else {
                 BudsDisconnectedNote(buds: buds)
             }

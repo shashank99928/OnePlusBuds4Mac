@@ -40,4 +40,12 @@ else
 fi
 
 echo "built $APP"
+
+# The protocol checks, run against the binary that was just built — release included, since
+# that is what ships. They exercise the real selfCheck, not an assert that optimises away.
+if ! "./$APP/Contents/MacOS/OnePlusBuds4" --selfcheck; then
+    echo "error: protocol self-check failed" >&2
+    exit 1
+fi
+
 echo "run:  open \"$APP\"     (or: \"./$APP/Contents/MacOS/OnePlusBuds4\"  to see stderr)"

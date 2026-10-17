@@ -21,16 +21,24 @@ let swiftUIMacros: [SwiftSetting] = {
     return [.unsafeFlags(["-load-plugin-library", plugin])]
 }()
 
+// Everything runs on the main thread apart from two explicit dispatches, and IOBluetooth
+// predates Sendable. Strict concurrency checking buys nothing but ceremony at this size.
+let shared: [SwiftSetting] = [.swiftLanguageMode(.v5)] + swiftUIMacros
+
 let package = Package(
     name: "OnePlusBuds4",
     platforms: [.macOS(.v26)],
     targets: [
-        .executableTarget(
-            name: "OnePlusBuds4",
-            path: "Sources/BudsBar",
-            // Everything here runs on the main thread apart from two explicit
-            // dispatches, and IOBluetooth predates Sendable. Strict concurrency
-            // checking buys nothing but ceremony at this size.
-            swiftSettings: [.swiftLanguageMode(.v5)] + swiftUIMacros)
+        // The app is a library so `swift test` can reach the protocol — and the views, which
+        // is what lets a golden image be rendered and compared by a test rather than by eye.
+        // The executable target is the entry point and nothing else; see
+        // `Sources/OnePlusBuds4/main.swift` for why that trade was worth making.
+        .target(name: "BudsBarKit", path: "Sources/BudsBarKit", swiftSettings: shared),
+
+        .executableTarget(name: "OnePlusBuds4", dependencies: ["BudsBarKit"],
+                          path: "Sources/OnePlusBuds4", swiftSettings: shared),
+
+        .testTarget(name: "BudsBarKitTests", dependencies: ["BudsBarKit"],
+                    path: "Tests/BudsBarKitTests", swiftSettings: shared),
     ]
 )
