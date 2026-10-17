@@ -92,13 +92,14 @@ enum Snapshots {
         }
     }
 
+    /// Draws any view the way the site surfaces are drawn — fixed width, 2×, with the
+    /// snapshot-only control substitutions on — so a component golden and a surface golden
+    /// cannot drift apart in how they were produced.
     @MainActor
-    static func image(_ surface: Surface) -> NSImage? {
-        let buds = Buds()
-        buds.seedForSnapshot(surface.state)
+    private static func render<V: View>(_ content: V, width: CGFloat) -> NSImage? {
         let renderer = ImageRenderer(
-            content: surface.content(buds)
-                .frame(width: surface.width)
+            content: content
+                .frame(width: width)
                 // `ImageRenderer` cannot rasterise AppKit-backed controls — a `Menu` or a
                 // `Toggle` comes out as a coloured placeholder bar, which would make the
                 // README image and the golden both look broken. The affected controls
@@ -108,13 +109,43 @@ enum Snapshots {
         return renderer.nsImage
     }
 
+    @MainActor
+    private static func pngData(_ image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    @MainActor
+    static func image(_ surface: Surface) -> NSImage? {
+        let buds = Buds()
+        buds.seedForSnapshot(surface.state)
+        return render(surface.content(buds), width: surface.width)
+    }
+
     /// PNG bytes — what the golden test compares.
     @MainActor
     static func png(_ surface: Surface) -> Data? {
-        guard let image = image(surface),
-              let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else { return nil }
-        return rep.representation(using: .png, properties: [:])
+        image(surface).flatMap(pngData)
+    }
+
+    /// PNG bytes for a single view, drawn the same way a surface is.
+    ///
+    /// This is what `SnapshotTests` renders its *component* goldens with. Those goldens live
+    /// in `Tests/Goldens/`, not in `docs/assets` where the four site surfaces are kept — and
+    /// the difference is deliberate rather than an oversight. `docs/assets` holds the site
+    /// surfaces because the image a visitor sees on the website and the image the test
+    /// verifies are then one file with no second copy to drift. A lone `PowerButton` or
+    /// `BatteryChip` is not a website asset — nothing on the site shows one — so putting it
+    /// in `docs/assets` would be publishing a test-only file from GitHub Pages' directory.
+    /// `Tests/Goldens/` is a sibling of the test-target directory, exactly like
+    /// `Tests/Fixtures/`, so SwiftPM ignores it entirely: it is neither a target's sources nor
+    /// a declared resource, and no unhandled-file warning is produced. `--render-snapshots`
+    /// and `write(to:)` still touch only the four `Surface`s, so the site images keep working
+    /// unchanged.
+    @MainActor
+    static func png<V: View>(_ content: V, width: CGFloat) -> Data? {
+        render(content, width: width).flatMap(pngData)
     }
 
     @MainActor

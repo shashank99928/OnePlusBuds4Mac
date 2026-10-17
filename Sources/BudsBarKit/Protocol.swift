@@ -817,10 +817,31 @@ enum BudsProtocol {
     /// from `build.sh`, from `swift test`, and as a launch-time guard in debug.
     @discardableResult
     public static func selfCheck() -> SelfCheckResult {
+        selfCheck(corpus: FixtureCorpus.frames)
+    }
+
+    /// The same run against a corpus that is handed in rather than the one on disk, so that a
+    /// test can degrade it. The contract is the one the crash broke: a corpus that does not add
+    /// up comes back as *failures*, never as a trap. Every read below is total, and this is how
+    /// that is checked rather than by reading the subscripts carefully and hoping.
+    static func selfCheck(corpus: [FixtureCorpus.Capture]) -> SelfCheckResult {
         var result = SelfCheckResult()
         func check(_ condition: @autoclosure () -> Bool, _ message: @autoclosure () -> String) {
             result.checks += 1
             if !condition() { result.failures.append(message()) }
+        }
+
+        // Every read below goes through these two, because `selfCheck` promises to *report* a
+        // regression and a subscript that traps is the one way it cannot: the run dies with an
+        // index-out-of-range and never prints the failures it had already collected. That is not
+        // hypothetical. 1.0.0 crashed here — in the check that followed a failed count
+        // assertion, reading element zero of what the assertion had just proved was not there.
+        // A check may fail. It may not take the process down with it.
+        func byte(_ bytes: [UInt8], _ index: Int) -> UInt8? {
+            bytes.indices.contains(index) ? bytes[index] : nil
+        }
+        func tail(_ bytes: [UInt8], from index: Int) -> [UInt8]? {
+            index >= 0 && index <= bytes.count ? Array(bytes[index...]) : nil
         }
 
         // MARK: The corpus itself
@@ -833,7 +854,7 @@ enum BudsProtocol {
         // against a placeholder — so the report names the cause instead of the process dying.
         var captured: [String: Frame] = [:]
         let placeholder = Frame(cmd: 0, messageType: 0, sequence: 0, payload: [], raw: [])
-        for capture in FixtureCorpus.frames {
+        for capture in corpus {
             var buffer = capture.bytes
             let parsed = drainFrames(from: &buffer)
             check(parsed.count == 1 && buffer.isEmpty,
@@ -896,7 +917,7 @@ enum BudsProtocol {
 
         let big = makeFrame(0, 0, cmd: 0x1f, messageType: 0x81, sequence: 1,
                             payload: Array(repeating: 0, count: 299))
-        check(big[1] == 0xb2 && big[2] == 0x02, "big frame length is a varint")
+        check(byte(big, 1) == 0xb2 && byte(big, 2) == 0x02, "big frame length is a varint")
         var bigBuffer = big
         let bigFrames = drainFrames(from: &bigBuffer)
         check(bigFrames.count == 1 && bigFrames[0].payload.count == 299,
@@ -1095,11 +1116,11 @@ enum BudsProtocol {
         // the claim that the setter ids are a different namespace from the getters'.
         let setOff = encodeSetNoiseMask(NoiseMode.off.mask)
         check(setOff.count == 13, "an ANC set is 13 bytes: \(hex(setOff))")
-        check(Array(setOff[9...]) == [0x01, 0x01, 0x08, 0x00],
+        check(tail(setOff, from: 9) == [0x01, 0x01, 0x08, 0x00],
               "the explicit 16-bit mask, not the single byte that cannot express Adaptive")
-        check(setOff[4] == Setter.anc.rawValue && setOff[4] == capture("setack-anc").cmd,
+        check(byte(setOff, 4) == Setter.anc.rawValue && byte(setOff, 4) == capture("setack-anc").cmd,
               "the ANC setter id is the one the hardware acknowledges")
-        check(setOff[5] == MessageType.set.rawValue, "and it is a set, not a request")
+        check(byte(setOff, 5) == MessageType.set.rawValue, "and it is a set, not a request")
         var setBuffer = setOff
         let setFrames = drainFrames(from: &setBuffer)
         check(setFrames.count == 1 && setBuffer.isEmpty, "the set frame parses as one frame")
@@ -1107,15 +1128,15 @@ enum BudsProtocol {
               "a set frame is not a status update")
 
         let setEQ = encodeSetEQPreset(.bass)
-        check(Array(setEQ[9...]) == Array(eqBass.payload.dropFirst()),
+        check(tail(setEQ, from: 9) == Array(eqBass.payload.dropFirst()),
               "the EQ setter takes its getter's reply payload minus the status byte")
-        check(setEQ[4] == capture("setack-eq").cmd, "the EQ setter id is the acknowledged one")
+        check(byte(setEQ, 4) == capture("setack-eq").cmd, "the EQ setter id is the acknowledged one")
 
         let setBass = encodeSetBassWave(2)
-        check(Array(setBass[9...]) == Array(bass2.payload.dropFirst()),
+        check(tail(setBass, from: 9) == Array(bass2.payload.dropFirst()),
               "the BassWave setter echoes the getter's bounds: \(hex(setBass))")
-        check(setBass[4] == Setter.bassWave.rawValue
-                && setBass[4] == capture("setack-basswave").cmd,
+        check(byte(setBass, 4) == Setter.bassWave.rawValue
+                && byte(setBass, 4) == capture("setack-basswave").cmd,
               "BassWave's setter is 0x1B, not the getter's 0x24")
         check(encodeSetBassWave(99).last == 0x05, "the level is clamped to the hardware range")
         check(encodeSetBassWave(-99).last == 0xfb, "clamped at the bottom too")
@@ -1126,9 +1147,9 @@ enum BudsProtocol {
         if let rule = rules?.first(where: { $0.type == TouchRule.media
                                             && $0.side == TouchRule.left }) {
             let setTouch = encodeSetTouch([rule])
-            check(Array(setTouch[9...]) == [0x01, rule.side, rule.type, rule.gesture, rule.action],
+            check(tail(setTouch, from: 9) == [0x01, rule.side, rule.type, rule.gesture, rule.action],
                   "one touch record behind its count: \(hex(setTouch))")
-            check(setTouch[4] == Setter.touch.rawValue, "the touch setter id")
+            check(byte(setTouch, 4) == Setter.touch.rawValue, "the touch setter id")
         } else {
             check(false, "the capture has no media-context record on the left to write back")
         }
@@ -1136,9 +1157,9 @@ enum BudsProtocol {
         // Find is a count-prefixed id list. These three payloads are the ones measured
         // independently against the hardware, so the encoder is checked against bytes it did
         // not produce.
-        check(Array(encodeFind([.left])[9...]) == [0x01, 0x01], "find left only")
-        check(Array(encodeFind([.right])[9...]) == [0x01, 0x02], "find right only")
-        check(Array(encodeFind([.left, .right])[9...]) == [0x02, 0x01, 0x02], "find both")
+        check(tail(encodeFind([.left]), from: 9) == [0x01, 0x01], "find left only")
+        check(tail(encodeFind([.right]), from: 9) == [0x01, 0x02], "find right only")
+        check(tail(encodeFind([.left, .right]), from: 9) == [0x02, 0x01, 0x02], "find both")
 
         // MARK: Frames that must not move anything
 
@@ -1161,9 +1182,9 @@ enum BudsProtocol {
         check(coalesced.isEmpty, "and nothing is left over")
 
         // One frame split across two reads: the tail must be held, not misparsed.
-        var split = Array(battery.raw[0..<6])
+        var split = Array(battery.raw.prefix(6))
         check(drainFrames(from: &split).isEmpty, "a partial frame is withheld")
-        split.append(contentsOf: battery.raw[6...])
+        split.append(contentsOf: battery.raw.dropFirst(6))
         check(drainFrames(from: &split).count == 1, "the frame completes across reads")
 
         // Leading garbage before the sync byte must be skipped, not fatal.
@@ -1179,7 +1200,10 @@ enum BudsProtocol {
         // resumes, rather than being handed to a decoder as though it were one. This is the
         // behaviour the crash depended on being right.
         var malformed = battery.raw
-        malformed[1] = 0x0e                     // claim one byte more than is present
+        // Claim one byte more than is present. Guarded, because a corpus short enough to make this
+        // write illegal has already failed the framing checks above — and this must not be the
+        // thing that ends the run.
+        if malformed.indices.contains(1) { malformed[1] = 0x0e }
         check(drainFrames(from: &malformed).isEmpty, "a lying length field is rejected")
 
         return result

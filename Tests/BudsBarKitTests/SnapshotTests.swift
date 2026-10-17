@@ -1,4 +1,6 @@
 import AppKit
+import IOBluetooth
+import SwiftUI
 import XCTest
 @testable import BudsBarKit
 
@@ -10,8 +12,11 @@ import XCTest
 /// check that catches that class of mistake, because the wrong output is perfectly valid
 /// SwiftUI — it just looks wrong.
 ///
-/// The goldens live in `docs/assets`, which is also the website's asset directory, so the
-/// screenshot a visitor sees is byte-for-byte the one this test verifies.
+/// The four site-surface goldens live in `docs/assets`, which is also the website's asset
+/// directory, so the screenshot a visitor sees is byte-for-byte the one this test verifies.
+/// The component goldens — the individual controls no site surface isolates — live in
+/// `Tests/Goldens/`, which is test-only; `Snapshots.png(_:width:)` states why the two are
+/// kept apart rather than sharing one directory.
 ///
 /// Regenerate deliberately, and read the diff, with:
 ///
@@ -73,6 +78,292 @@ final class SnapshotTests: XCTestCase {
         XCTAssertNotNil(buds.bassWave, "the capture has a BassWave readback")
         XCTAssertNotNil(buds.firmware, "the capture has the firmware string")
         XCTAssertEqual(buds.touchRules.count, 18, "the capture has the gesture table")
+    }
+
+    // MARK: - Component goldens
+
+    /// Where the component goldens live. Deliberately not `docs/assets`, which holds the four
+    /// site surfaces — see `Snapshots.png(_:width:)` for why the two are kept apart.
+    private var componentGoldenDirectory: URL {
+        URL(fileURLWithPath: #filePath)             // Tests/BudsBarKitTests/SnapshotTests.swift
+            .deletingLastPathComponent()            // Tests/BudsBarKitTests
+            .deletingLastPathComponent()            // Tests
+            .appendingPathComponent("Goldens")
+    }
+
+    /// One view pinned on its own, with the state it is pinned in written down.
+    private struct ComponentGolden {
+        let name: String
+        /// The state, in one line, so a failure says what the picture is supposed to show.
+        let state: String
+        let width: CGFloat
+        let view: @MainActor () -> AnyView
+    }
+
+    /// The component surfaces the four site goldens never isolate.
+    ///
+    /// A full-surface image proves the whole column still adds up, but a branch that only
+    /// appears in a state no surface golden is taken in — Noise cancellation's level row, a
+    /// case that the wear report has named but whose charge has not been read, a control
+    /// channel that has dropped while its last reading is still on screen — is invisible to
+    /// them. Each view here is drawn on its own, seeded from the same decoded fixture corpus
+    /// (and, where a reading is readback-driven rather than settable, by replaying the
+    /// capture through the real RFCOMM ingest path; see `ingest`).
+    private var componentGoldens: [ComponentGolden] {
+        [
+            ComponentGolden(
+                name: "level-selector",
+                state: "Noise cancellation active at High; the nc-high capture replayed so the "
+                     + "level row is in the branch that shows it",
+                width: 340
+            ) { [self] in
+                let buds = seeded(.connected)
+                ingest("anc-reply-nc-high", into: buds)
+                return onDarkSurface(LevelSelector(buds: buds))
+            },
+
+            ComponentGolden(
+                name: "noise-control-section-noise-cancellation",
+                state: "the section with Noise cancellation active, so the level row it "
+                     + "conditionally shows is present — no site golden is in this branch",
+                width: 340
+            ) { [self] in
+                let buds = seeded(.connected)
+                ingest("anc-reply-nc-high", into: buds)
+                return onDarkSurface(NoiseControlSection(buds: buds))
+            },
+
+            ComponentGolden(
+                name: "device-details-firmware-unknown",
+                state: "nothing read yet, so the firmware row renders a dash",
+                width: 470
+            ) { [self] in
+                // The warming-up window: connected, control channel not open, nothing read.
+                onDarkSurface(DeviceDetailsSection(buds: seeded(.warmingUp)), padding: 22)
+            },
+
+            ComponentGolden(
+                name: "disconnected-note-paired",
+                state: "paired but link down — \"Earbuds aren't connected\"",
+                width: 340
+            ) { [self] in
+                onDarkSurface(BudsDisconnectedNote(buds: seeded(.disconnected)))
+            },
+
+            ComponentGolden(
+                name: "disconnected-note-unpaired",
+                state: "nothing paired — \"Can't find your earbuds\"",
+                width: 340
+            ) { [self] in
+                // A live app with nothing paired is exactly a `Buds` that never discovered a
+                // device: no seed, because seeding forces pairing.
+                onDarkSurface(BudsDisconnectedNote(buds: Buds()))
+            },
+
+            ComponentGolden(
+                name: "power-button-off",
+                state: "off — paired, link down, so the button is outlined and enabled",
+                width: 96
+            ) { [self] in
+                onDarkSurface(PowerButton(buds: seeded(.disconnected)), padding: 16)
+            },
+
+            ComponentGolden(
+                name: "power-button-unpaired",
+                state: "off with nothing paired, which is the disabled, dimmed branch",
+                width: 96
+            ) { [self] in
+                onDarkSurface(PowerButton(buds: Buds()), padding: 16)
+            },
+
+            ComponentGolden(
+                name: "status-dot-off",
+                state: "the disconnected dot, driven from the seeded link state",
+                width: 44
+            ) { [self] in
+                onDarkSurface(StatusDot(on: seeded(.disconnected).isConnected), padding: 12)
+            },
+
+            ComponentGolden(
+                name: "battery-chip-case",
+                state: "the case chip with the case present and its charge unread — a dash",
+                width: 135
+            ) { [self] in
+                let buds = seeded(.connected)
+                // The wear capture names the enclosure, which is the only evidence of a case;
+                // the battery capture carries no case entry, so its charge reads unknown.
+                return onDarkSurface(
+                    BatteryChip(title: "Case", glyph: "earbuds.case.fill",
+                                level: buds.battery.enclosure),
+                    padding: 16)
+            },
+
+            ComponentGolden(
+                name: "device-pill-case",
+                state: "the hero's case pill, present with its charge unread",
+                width: 260
+            ) { [self] in
+                let buds = seeded(.connected)
+                return onDarkSurface(
+                    DevicePill(glyph: "earbuds.case.fill", title: "Case",
+                               level: buds.battery.enclosure),
+                    padding: 16)
+            },
+
+            ComponentGolden(
+                name: "basswave-flat",
+                state: "flat — the 0 capture replayed so the centre tick is the selected one",
+                width: 340
+            ) { [self] in
+                let buds = seeded(.connected)
+                ingest("basswave-reply-0", into: buds)
+                return onDarkSurface(BassWaveControl(buds: buds))
+            },
+
+            // The branches below were not on the audit's list. They are the same condition —
+            // a real rendering branch no golden reaches — found by reading the components for
+            // this change, so they are pinned too.
+
+            ComponentGolden(
+                name: "battery-hero-unknown",
+                state: "no battery read: the dimmed dash headline and \"Battery unknown\"",
+                width: 470
+            ) { [self] in
+                onDarkSurface(BatteryHero(buds: seeded(.warmingUp)), padding: 22)
+            },
+
+            ComponentGolden(
+                name: "controls-not-ready-reconnecting",
+                state: "a reading held while the control channel is closed — the "
+                     + "\"Reconnecting to the earbuds…\" wording, not \"Reading…\"",
+                width: 340
+            ) { [self] in
+                let buds = seeded(.connected)
+                // The channel dropping while the audio link stays up: the last readings are
+                // still on screen, so the notice has to say it is reconnecting rather than
+                // reading. `rfcommChannelClosed` is the real teardown callback.
+                buds.rfcommChannelClosed(nil)
+                return onDarkSurface(ControlsNotReady(text: ControlsNotReady.wording(
+                    "Reading the noise-control setting…",
+                    channelOpen: buds.isControlChannelOpen,
+                    hasReading: buds.mode != nil)))
+            },
+
+            ComponentGolden(
+                name: "earbud-controls-warming",
+                state: "before the gesture table is read: every row says \"Not reported\"",
+                width: 470
+            ) { [self] in
+                onDarkSurface(EarbudControlsSection(buds: seeded(.warmingUp)), padding: 22)
+            },
+        ]
+    }
+
+    /// Seeds a `Buds` the way `Surface.image` does, so a component shows the same state a
+    /// surface golden does rather than a different one invented beside it.
+    private func seeded(_ state: Buds.SnapshotState = .connected) -> Buds {
+        let buds = Buds()
+        buds.seedForSnapshot(state)
+        return buds
+    }
+
+    /// Replays one captured corpus frame through the real RFCOMM ingest path — the delegate
+    /// callback the radio itself calls — to reach a reading the setters cannot.
+    ///
+    /// `set(mode:)`, `set(ancLevel:)`, `set(eqPreset:)` and `set(bassWave:)` command the buds
+    /// and deliberately leave the model alone: the UI renders what was *read back*, so a
+    /// setter with no channel behind it moves nothing. Replaying a capture is therefore the
+    /// only honest way to put a readback-driven reading where the hardware reported it — and
+    /// it is the same operation `seedForSnapshot` performs, just with an individual frame. No
+    /// frame is ever synthesized: if the reading was not captured, the state stays unpinned.
+    private func ingest(_ captureName: String, into buds: Buds) {
+        guard let capture = FixtureCorpus.frames.first(where: { $0.name == captureName }) else {
+            return XCTFail("no capture named \(captureName) in the corpus")
+        }
+        var bytes = capture.bytes
+        bytes.withUnsafeMutableBytes { raw in
+            buds.rfcommChannelData(nil, data: raw.baseAddress, length: raw.count)
+        }
+    }
+
+    /// The app's own dark surface, brought the way `Surface.window` brings it: every colour in
+    /// `Theme` assumes a dark background, so a component drawn without it renders
+    /// white-on-white and the golden would pin the wrong colours. The padding goes on the
+    /// content rather than on the `ZStack`, so the background stays full-bleed and the
+    /// component is inset symmetrically — exactly the relationship `MainColumn` has to its
+    /// background.
+    private func onDarkSurface<V: View>(_ content: V, padding: CGFloat = 16) -> AnyView {
+        AnyView(
+            ZStack {
+                PremiumBackground()
+                content.padding(padding)
+            }
+            .premiumSurface())
+    }
+
+    func testComponentSurfacesMatchTheirGoldenImages() throws {
+        for component in componentGoldens {
+            let rendered = try XCTUnwrap(
+                Snapshots.png(component.view(), width: component.width),
+                "\(component.name): ImageRenderer produced nothing")
+            let goldenURL = componentGoldenDirectory.appendingPathComponent("\(component.name).png")
+
+            if ProcessInfo.processInfo.environment["UPDATE_SNAPSHOTS"] != nil
+                || !FileManager.default.fileExists(atPath: goldenURL.path) {
+                try FileManager.default.createDirectory(at: componentGoldenDirectory,
+                                                        withIntermediateDirectories: true)
+                try rendered.write(to: goldenURL)
+                continue
+            }
+
+            let golden = try Data(contentsOf: goldenURL)
+            let difference = try compare(rendered, golden)
+            XCTAssertLessThan(
+                difference.ratio, 0.005,
+                """
+                \(component.name) no longer matches Tests/Goldens/\(component.name).png: \
+                \(difference.pixels) of \(difference.total) pixels differ \
+                (\(String(format: "%.2f", difference.ratio * 100))%). \
+                It pins: \(component.state). If the change is intended, regenerate with \
+                UPDATE_SNAPSHOTS=1 and read the diff.
+                """)
+        }
+    }
+
+    /// The component goldens are only meaningful if each seed actually reached the state the
+    /// golden claims. A capture replayed under the wrong name, or a state that turned out not
+    /// to be reachable, would otherwise pin the right pixels for the wrong reason — which is
+    /// worse than no golden, because it reads as coverage.
+    func testComponentSurfacesAreSeededFromTheRealCorpus() {
+        let nc = seeded(.connected)
+        ingest("anc-reply-nc-high", into: nc)
+        XCTAssertEqual(nc.mode, .noiseCancellation, "the level row is pinned in the wrong mode")
+        XCTAssertEqual(nc.ancLevel, .high)
+
+        let flat = seeded(.connected)
+        ingest("basswave-reply-0", into: flat)
+        XCTAssertEqual(flat.bassWave, 0, "the flat golden is not flat")
+
+        let warming = seeded(.warmingUp)
+        XCTAssertTrue(warming.isConnected)
+        XCTAssertFalse(warming.isControlChannelOpen)
+        XCTAssertNil(warming.firmware, "the firmware-unknown golden has a firmware")
+
+        let paired = seeded(.disconnected)
+        XCTAssertTrue(paired.isPaired)
+        XCTAssertFalse(paired.isConnected)
+        let unpaired = Buds()
+        XCTAssertFalse(unpaired.isPaired, "a fresh Buds is paired; the unpaired note is wrong")
+
+        let withCase = seeded(.connected)
+        XCTAssertTrue(withCase.isCaseReported, "the case goldens have no case to show")
+        XCTAssertNil(withCase.battery.enclosure, "the case charge is known; it should be unread")
+
+        let closed = seeded(.connected)
+        closed.rfcommChannelClosed(nil)
+        XCTAssertFalse(closed.isControlChannelOpen)
+        XCTAssertNotNil(closed.battery.left, "no reading held, so the reconnect wording is wrong")
+        XCTAssertNotNil(closed.mode)
     }
 
     private struct Difference {

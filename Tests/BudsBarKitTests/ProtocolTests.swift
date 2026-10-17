@@ -29,6 +29,32 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(BudsProtocol.selfCheck().failures, [])
     }
 
+    /// The contract the 1.0.0 crash broke, and the whole reason `selfCheck` reports a result
+    /// rather than asserting: a corpus that does not add up has to come back as a list of
+    /// failures. It used to come back as an index-out-of-range, in the check that followed the
+    /// count assertion which had just proved the array was too short — so the run died with a
+    /// trap and never printed the failure it had already collected.
+    ///
+    /// The capture is truncated mid-frame: the shortest thing that leaves every downstream read
+    /// of it with nothing to read. That reaching the assertions at all is the test — if a
+    /// subscript in `selfCheck` ever stops being total, this does not fail, it crashes.
+    func testSelfCheckReportsRatherThanTrapsOnADegradedCorpus() {
+        let truncated = FixtureCorpus.frames.map { capture in
+            capture.name == "battery-reply"
+                ? FixtureCorpus.Capture(name: capture.name,
+                                        note: "truncated mid-frame, for the checks about checks",
+                                        hex: "aa 0d 00 00 06 81 03 06 00 00")
+                : capture
+        }
+
+        let result = BudsProtocol.selfCheck(corpus: truncated)
+
+        XCTAssertFalse(result.passed, "a corpus that is not a corpus must not pass")
+        XCTAssertTrue(result.failures.contains { $0.contains("battery-reply") },
+                      "the report must name the fixture it could not read:\n"
+                      + result.failures.joined(separator: "\n"))
+    }
+
     // MARK: The corpus is a corpus
 
     /// The property, rather than a second opinion about the bytes: for every capture, both
