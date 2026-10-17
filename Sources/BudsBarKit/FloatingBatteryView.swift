@@ -6,10 +6,13 @@ struct FloatingBatteryView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            floatingCell(glyph: "airpods.gen3", title: "L", value: buds.battery.left)
-            floatingCell(glyph: "airpods.gen3", title: "R", value: buds.battery.right)
+            floatingCell(glyph: "earbud.left", title: "L", name: "Left earbud",
+                         value: buds.battery.left)
+            floatingCell(glyph: "earbud.right", title: "R", name: "Right earbud",
+                         value: buds.battery.right)
             if buds.battery.enclosure != nil {
-                floatingCell(glyph: "airpods.pro.chargingcase.wireless.fill", title: "Case", value: buds.battery.enclosure)
+                floatingCell(glyph: "earbuds.case.fill", title: "Case", name: "Case",
+                             value: buds.battery.enclosure)
             }
         }
         .padding(.horizontal, 18)
@@ -17,11 +20,16 @@ struct FloatingBatteryView: View {
         .glassEffect(.regular, in: .capsule)
     }
 
-    private func floatingCell(glyph: String, title: String, value: Int?) -> some View {
+    private func floatingCell(glyph: String, title: String, name: String,
+                              value: Int?) -> some View {
         VStack(spacing: 4) {
             Image(systemName: glyph)
                 .font(.system(size: 18, weight: .regular))
-            Text(value.map { "\($0)%" } ?? "—%")
+                .accessibilityHidden(true)
+            // "—%" is a placeholder with a unit glued to it, which reads as a broken value
+            // rather than a missing one. A bare dash says the same thing without pretending
+            // there is a number behind it.
+            Text(value.map { "\($0)%" } ?? "—")
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
             Text(title)
@@ -29,5 +37,8 @@ struct FloatingBatteryView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(minWidth: 52)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(name)
+        .accessibilityValue(value.map { "\($0) percent" } ?? "Not reported")
     }
 }

@@ -19,12 +19,15 @@ enum AppInfo {
 /// `Sources/OnePlusBuds4/main.swift`). That costs one `public` symbol and buys the checks a
 /// place to run that is not "at launch, in the app the user is trying to use".
 public enum BudsBar {
+    @MainActor
     public static func launch() {
         // Handled here rather than in `applicationDidFinishLaunching` so a check run never
         // constructs NSApplication, a status item, a popover, or a Bluetooth session. The
         // previous version checked after the app had already started — which is why a broken
         // fixture took the running app down with it instead of printing a failure.
         if BudsProtocol.isSelfCheckRun { BudsProtocol.runSelfCheckAndExit() }
+        // Same idea: draw the surfaces and exit, with no app behind it.
+        if Buds.isRenderingSnapshots { Snapshots.renderAndExit() }
         BudsBarApp.main()
     }
 }

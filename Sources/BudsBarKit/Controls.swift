@@ -9,6 +9,10 @@ import SwiftUI
 // MARK: - Status
 
 /// Small "live" dot used next to the device name.
+///
+/// Decorative: the connection state is carried by text (`StatusDot` sits beside the device
+/// name, and the footer says "Connected" / "Disconnected"), so a screen reader hearing a
+/// colourless dot twice would only be noise.
 struct StatusDot: View {
     var on: Bool
 
@@ -17,7 +21,34 @@ struct StatusDot: View {
             .fill(on ? Theme.green : Color.white.opacity(0.25))
             .frame(width: 8, height: 8)
             .shadow(color: on ? Theme.green.opacity(0.8) : .clear, radius: 5)
+            .accessibilityHidden(true)
     }
+}
+
+/// The one-line explanation shown under a section whose controls cannot be used yet.
+///
+/// Deliberately not a blanket `.opacity(0.5)` over the section. Halving the opacity halved
+/// the *selected* control too, so the one piece of state a user is trying to confirm became
+/// the hardest thing on screen to read — and it conflated "not ready for another second"
+/// with "not available". A selected control now stays at full strength, the inactive ones
+/// recede a little, and this says why.
+struct ControlsNotReady: View {
+    var text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(Theme.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// How far an *inactive* control recedes while the control channel is still opening.
+///
+/// The selected control is exempt — see `ControlsNotReady` — which is the whole reason this
+/// is applied per control rather than to the section.
+func channelDim(_ enabled: Bool, selected: Bool = false) -> Double {
+    enabled || selected ? 1 : 0.55
 }
 
 /// The round power control in the top corner. Filled with the accent while the buds are
@@ -31,7 +62,7 @@ struct PowerButton: View {
             if on { buds.disconnect() } else { buds.connect() }
         } label: {
             ZStack {
-                Circle().fill(on ? Theme.accent : Color.white.opacity(0.08))
+                Circle().fill(on ? Theme.selection : Color.white.opacity(0.08))
                 Circle().stroke(Color.white.opacity(on ? 0.35 : 0.14), lineWidth: 1)
                 Image(systemName: "power")
                     .font(.system(size: 16, weight: .semibold))
@@ -44,7 +75,11 @@ struct PowerButton: View {
         .disabled(buds.isBusy || !buds.isPaired)
         .opacity(buds.isBusy || !buds.isPaired ? 0.5 : 1)
         .help(on ? "Disconnect" : "Connect")
-        .accessibilityLabel(on ? "Disconnect earbuds" : "Connect earbuds")
+        // A constant label with the state as a value, rather than a label that flips between
+        // two actions: a disabled button that still reads "Connect earbuds" announces an
+        // action it cannot perform.
+        .accessibilityLabel("Earbuds power")
+        .accessibilityValue(on ? "Connected" : "Disconnected")
     }
 }
 
@@ -54,7 +89,7 @@ struct DeviceHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "airpods.gen3")
+            Image(systemName: "earbuds")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Theme.accent)
                 .frame(width: 34, height: 34)
@@ -63,6 +98,7 @@ struct DeviceHeader: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .stroke(Theme.cardStroke, lineWidth: 1))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Earbuds")
@@ -96,7 +132,9 @@ struct BatteryChip: View {
 
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: glyph).font(.system(size: 12, weight: .medium))
+                Image(systemName: glyph)
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
@@ -139,14 +177,14 @@ struct BatteryChipsRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            BatteryChip(title: "Left", glyph: "airpods.gen3", level: buds.battery.left,
+            BatteryChip(title: "Left", glyph: "earbud.left", level: buds.battery.left,
                         placement: buds.placement.left)
-            BatteryChip(title: "Right", glyph: "airpods.gen3", level: buds.battery.right,
+            BatteryChip(title: "Right", glyph: "earbud.right", level: buds.battery.right,
                         placement: buds.placement.right)
             // The case reports 0% while it is shut or asleep, which `interpret` turns into
             // nil rather than a false flat battery — that already drops the chip on its own.
             if buds.battery.enclosure != nil {
-                BatteryChip(title: "Case", glyph: "airpods.pro.chargingcase.wireless.fill",
+                BatteryChip(title: "Case", glyph: "earbuds.case.fill",
                             level: buds.battery.enclosure)
             }
         }
@@ -192,6 +230,7 @@ struct DevicePill: View {
             Image(systemName: glyph)
                 .font(.system(size: 20, weight: .regular))
                 .foregroundStyle(.white)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
@@ -205,7 +244,7 @@ struct DevicePill: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(width: 214)
-        .premiumCard(cornerRadius: 18)
+        .premiumCard(cornerRadius: 16)
     }
 }
 
@@ -213,11 +252,12 @@ struct DevicePill: View {
 /// earbud's charge, which is when you actually need to reach for the case.
 struct BatteryHero: View {
     @Bindable var buds: Buds
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 4) {
-            DevicePill(glyph: "airpods.pro.chargingcase.wireless.fill",
-                       title: "Charging case", level: buds.battery.enclosure)
+            DevicePill(glyph: "earbuds.case.fill",
+                       title: "Case", level: buds.battery.enclosure)
 
             // Sound leaving the buds, standing in for the reference's airflow. Clipped so
             // the arcs fade out instead of running down into the reading below.
@@ -234,7 +274,11 @@ struct BatteryHero: View {
                 .padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
+        // `.combine` would gather the children and then be overridden by the label below,
+        // which dropped the case reading entirely — the pill is inside this subtree and its
+        // own value never reached the reader. The label is built from the same state the
+        // children show, so nothing is lost by describing it once.
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
 
@@ -254,7 +298,7 @@ struct BatteryHero: View {
                 Text("\(weakest)")
                     .font(.system(size: 68, weight: .light, design: .rounded))
                     .monospacedDigit()
-                    .contentTransition(.numericText())
+                    .contentTransition(reduceMotion ? .identity : .numericText())
                 Text("%")
                     .font(.system(size: 26, weight: .light))
                     .foregroundStyle(Theme.secondary)
@@ -267,28 +311,53 @@ struct BatteryHero: View {
     }
 
     private var caption: String {
-        weakest == nil ? "Battery unknown" : "Lowest earbud"
+        weakest == nil ? "Battery unknown" : "Lowest earbud charge"
     }
 
     private var accessibilityText: String {
-        weakest.map { "Lowest earbud battery \($0) percent" } ?? "Earbud battery unknown"
+        let lowest = weakest.map { "Lowest earbud battery \($0) percent" }
+            ?? "Earbud battery unknown"
+        guard let enclosure = buds.battery.enclosure else { return lowest }
+        return "\(lowest). Case battery \(enclosure) percent"
     }
 }
 
 // MARK: - Noise control
 
-/// The four modes as equal pills: glyph on top, label below, accent-filled when active.
+/// The four modes as equal pills: glyph on top, label below, filled when active.
 ///
 /// Four across rather than the three this started with, because Adaptive is a real fourth
 /// mode and not a variant of cancellation — the phone shows it as a peer of the others, and
 /// leaving it out meant the one mode that adapts by itself was unreachable.
+///
+/// Four across is also the phone's own layout, and it is what the window gets. It does not
+/// fit a 308pt panel, nor the window at its minimum width: "Noise cancellation" needs about
+/// 62pt at the 0.7 scale floor, and four pills in those widths leave 41.5pt and 58.5pt of
+/// inner width, so the label clipped to "cancell…". Two across leaves 121pt, which is room
+/// to spare, so the narrow case falls back to a 2×2 grid rather than truncating.
 struct ModeGrid: View {
     @Bindable var buds: Buds
 
+    private static let spacing: CGFloat = 10
+
+    /// The container width at which four pills leave enough room for the longest label.
+    /// Measured, then rounded up for headroom — there are no font metrics at compile time,
+    /// so `ModeGridTests` pins both branches against the two real surface widths.
+    static let fourAcrossMinimum: CGFloat = 400
+
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach(NoiseMode.allCases) { mode in
-                pill(mode)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Self.spacing) {
+                ForEach(NoiseMode.allCases) { pill($0) }
+            }
+            .frame(minWidth: Self.fourAcrossMinimum)
+
+            // A plain `Grid`, not `LazyVGrid`: a lazy container has nothing to lay out when
+            // the whole thing is drawn offscreen, which is exactly how the golden images and
+            // the README screenshots are produced.
+            Grid(horizontalSpacing: Self.spacing, verticalSpacing: Self.spacing) {
+                GridRow { pill(.noiseCancellation); pill(.adaptive) }
+                GridRow { pill(.transparency); pill(.off) }
             }
         }
     }
@@ -301,8 +370,9 @@ struct ModeGrid: View {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: mode.symbol)
                     .font(.system(size: 20, weight: .medium))
-                // Two lines, reserved, because "Noise cancellation" does not fit one on a
-                // 76pt pill and truncating it to "Noise canc…" looks like a bug.
+                    .accessibilityHidden(true)
+                // Two lines, reserved, because "Noise cancellation" does not fit one line on
+                // a narrow pill and truncating it to "Noise canc…" looks like a bug.
                 Text(mode.label)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(2, reservesSpace: true)
@@ -313,16 +383,18 @@ struct ModeGrid: View {
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(selected ? Theme.accent.opacity(0.92) : Theme.card))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(selected ? Theme.selection : Theme.card))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(selected ? Color.white.opacity(0.32) : Theme.cardStroke, lineWidth: 1))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(selected ? Theme.selectionStroke : Theme.cardStroke, lineWidth: 1))
             .shadow(color: selected ? Theme.accent.opacity(0.45) : .clear, radius: 14)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .opacity(channelDim(buds.isControlChannelOpen, selected: selected))
         .accessibilityLabel(mode.label)
+        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -349,7 +421,10 @@ struct LevelSelector: View {
                 }
             }
 
-            Text(buds.ancLevel?.detail ?? "Waiting for the buds to report a level")
+            // A dash above and this line below, rather than a sentence that repeats what the
+            // dashes already say. The states are: known (the word and its detail), not yet
+            // reported, and the levels genuinely do not apply outside Noise cancellation.
+            Text(buds.ancLevel?.detail ?? "Level not reported yet")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -367,14 +442,16 @@ struct LevelSelector: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 36)
                 .background(
-                    Capsule().fill(selected ? Theme.accent.opacity(0.9) : Color.white.opacity(0.07)))
+                    Capsule().fill(selected ? Theme.selection : Color.white.opacity(0.07)))
                 .overlay(
-                    Capsule().stroke(selected ? Color.white.opacity(0.30) : Theme.cardStroke,
+                    Capsule().stroke(selected ? Theme.selectionStroke : Theme.cardStroke,
                                      lineWidth: 1))
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
+        .opacity(channelDim(buds.isControlChannelOpen, selected: selected))
         .accessibilityLabel(level.label)
+        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -385,6 +462,11 @@ struct NoiseControlSection: View {
     @State private var showingHelp = false
 
     private var canSwitchModes: Bool { buds.isControlChannelOpen }
+
+    /// Honor the system setting: the level row slides in and out, and the pills cross-fade
+    /// when the mode changes. Both are decoration, and both are the kind that makes some
+    /// people motion-sick.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -398,6 +480,7 @@ struct NoiseControlSection: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.secondary)
+                .accessibilityLabel("About noise control")
                 .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
                     Text("Noise cancellation blocks outside sound, at whichever level "
                        + "you pick — High for planes and trains, Low for home. Adaptive "
@@ -410,25 +493,24 @@ struct NoiseControlSection: View {
                 }
             }
 
+            // No blanket opacity over the group: `ModeGrid` recedes its own inactive pills
+            // and keeps the selected one at full strength. See `ControlsNotReady`.
             ModeGrid(buds: buds)
                 .disabled(!canSwitchModes)
-                .opacity(canSwitchModes ? 1 : 0.5)
 
             if buds.mode == .noiseCancellation {
                 LevelSelector(buds: buds)
                     .disabled(!canSwitchModes)
-                    .opacity(canSwitchModes ? 1 : 0.5)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .identity
+                                             : .opacity.combined(with: .move(edge: .top)))
             }
 
             if !canSwitchModes {
-                Text("Waiting for the control channel…")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondary)
+                ControlsNotReady(text: "Getting controls ready…")
             }
         }
-        .animation(.smooth(duration: 0.25), value: buds.mode)
-        .animation(.smooth(duration: 0.25), value: buds.isControlChannelOpen)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: buds.mode)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: buds.isControlChannelOpen)
     }
 }
 
@@ -475,18 +557,22 @@ struct EQPresetSelector: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(selected ? Theme.accent.opacity(0.9) : Color.white.opacity(0.07)))
+                        .fill(selected ? Theme.selection : Color.white.opacity(0.07)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(selected ? Color.white.opacity(0.30) : Theme.cardStroke,
+                        .stroke(selected ? Theme.selectionStroke : Theme.cardStroke,
                                 lineWidth: 1))
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(!available)
-        .opacity(available ? 1 : 0.45)
+        .opacity(available ? channelDim(buds.isControlChannelOpen, selected: selected) : 0.45)
         .help(available ? preset.label : "Save a custom profile in the phone app first")
         .accessibilityLabel(preset.label)
+        // The reason Custom is unusable is not visible on screen — the tone of its label is
+        // the only cue — so it is stated instead of left to be inferred from being greyed out.
+        .accessibilityHint(available ? "" : "Save a custom profile in the phone app first")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -520,8 +606,23 @@ struct BassWaveControl: View {
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("BassWave level")
+        // One adjustable element instead of eleven buttons. Eleven 24pt tab stops told a
+        // VoiceOver user nothing but a number each, and the only thing separating one from
+        // another was its fill colour — which is exactly the cue that does not exist for
+        // someone who cannot see it. The ticks stay for the pointer; the accessibility tree
+        // gets the whole scale at once.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("BassWave")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Swipe up or down to change the bass emphasis")
+        .accessibilityAdjustableAction { direction in
+            let current = buds.bassWave ?? 0
+            switch direction {
+            case .increment: buds.set(bassWave: min(current + 1, Self.range.upperBound))
+            case .decrement: buds.set(bassWave: max(current - 1, Self.range.lowerBound))
+            @unknown default: break
+            }
+        }
     }
 
     /// Signed at both ends: "5" for a bass boost reads as a level, "+5" reads as a boost.
@@ -529,6 +630,12 @@ struct BassWaveControl: View {
         guard let level = buds.bassWave else { return "—" }
         if level > 0 { return "+\(level)" }
         return "\(level)"
+    }
+
+    private var accessibilityValue: String {
+        guard let level = buds.bassWave else { return "Not reported" }
+        if level == 0 { return "Flat" }
+        return level > 0 ? "Plus \(level) of 5" : "Minus \(-level) of 5"
     }
 
     private func tick(_ value: Int) -> some View {
@@ -540,18 +647,21 @@ struct BassWaveControl: View {
             buds.set(bassWave: value)
         } label: {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(selected ? Theme.accent.opacity(0.9) : Color.white.opacity(resting))
+                .fill(selected ? Theme.selection : Color.white.opacity(resting))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(selected ? Color.white.opacity(0.30) : Theme.cardStroke,
+                        .stroke(selected ? Theme.selectionStroke : Theme.cardStroke,
                                 lineWidth: 1))
-                .frame(height: 24)
+                // Height as well as colour: the selected step stands proud of the row, so the
+                // current level is legible in a greyscale screenshot and to anyone who does
+                // not separate blue from grey.
+                .frame(height: selected ? 30 : 24)
                 .frame(maxWidth: .infinity)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(value > 0 ? "Bass plus \(value)" : "Bass \(value)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .opacity(channelDim(buds.isControlChannelOpen, selected: selected))
+        .accessibilityHidden(true)
     }
 }
 
@@ -570,9 +680,12 @@ struct SoundSection: View {
 
             EQPresetSelector(buds: buds)
             BassWaveControl(buds: buds)
+
+            if !enabled {
+                ControlsNotReady(text: "Getting controls ready…")
+            }
         }
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.5)
     }
 }
 
@@ -595,21 +708,27 @@ struct FindMyEarbudsSection: View {
                 .foregroundStyle(Theme.secondary)
 
             HStack(spacing: 8) {
-                ringButton("Left", slots: [.left])
-                ringButton("Right", slots: [.right])
-                ringButton("Both", slots: [.left, .right])
+                ringButton("Left", slots: [.left], name: "left earbud")
+                ringButton("Right", slots: [.right], name: "right earbud")
+                ringButton("Both", slots: [.left, .right], name: "both earbuds")
+            }
+
+            if !enabled {
+                ControlsNotReady(text: "Getting controls ready…")
             }
         }
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.5)
     }
 
-    private func ringButton(_ title: String, slots: [BudsProtocol.BatterySlot]) -> some View {
+    private func ringButton(_ title: String, slots: [BudsProtocol.BatterySlot],
+                            name: String) -> some View {
         Button {
             buds.find(slots)
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2.fill").font(.system(size: 11, weight: .medium))
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .accessibilityHidden(true)
                 Text(title).font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(.white.opacity(0.92))
@@ -624,7 +743,10 @@ struct FindMyEarbudsSection: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Play a tone in the \(title) earbud")
+        .opacity(channelDim(enabled))
+        // The button's own label is one word — "Both" — and the old spoken name was
+        // "Play a tone in the Both earbud". The spoken name is written out in full.
+        .accessibilityLabel("Play a tone in the \(name)")
     }
 }
 
@@ -654,9 +776,12 @@ struct EarbudControlsSection: View {
                     GestureRow(buds: buds, gesture: gesture)
                 }
             }
+
+            if !enabled {
+                ControlsNotReady(text: "Reading the gesture table from the earbuds…")
+            }
         }
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.5)
     }
 }
 
@@ -665,6 +790,10 @@ struct EarbudControlsSection: View {
 struct GestureRow: View {
     @Bindable var buds: Buds
     var gesture: BudsProtocol.MediaGesture
+
+    /// `ImageRenderer` draws a coloured placeholder for a `Menu`; the snapshot renderer
+    /// substitutes the bare label. See `EnvironmentValues.isRenderingSnapshot`.
+    @Environment(\.isRenderingSnapshot) private var isSnapshot
 
     private var current: BudsProtocol.GestureAction? {
         buds.touchAction(gesture)
@@ -678,12 +807,26 @@ struct GestureRow: View {
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.chip))
+                .accessibilityHidden(true)
 
             Text(gesture.label)
                 .font(.system(size: 13, weight: .semibold))
 
             Spacer(minLength: 6)
 
+            actionControl
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard(cornerRadius: 14)
+    }
+
+    @ViewBuilder
+    private var actionControl: some View {
+        if isSnapshot {
+            actionLabel
+        } else {
             Menu {
                 Picker("", selection: Binding(
                     get: { current ?? .none },
@@ -695,35 +838,37 @@ struct GestureRow: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                HStack(spacing: 5) {
-                    Text(current?.label ?? "Unknown")
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .opacity(0.5)
-                }
-                .foregroundStyle(current == nil ? AnyShapeStyle(Theme.secondary)
-                                                : AnyShapeStyle(.white.opacity(0.92)))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.white.opacity(0.07)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(Theme.cardStroke, lineWidth: 1))
+                actionLabel
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .accessibilityLabel("\(gesture.label) action")
-            .accessibilityValue(current?.label ?? "Unknown")
+            .accessibilityValue(current?.label ?? "Not reported")
         }
+    }
+
+    private var actionLabel: some View {
+        HStack(spacing: 5) {
+            // "Unknown" reads as a fault; the truth is that the answer has not arrived. A
+            // gesture table takes a moment to be read off the buds.
+            Text(current?.label ?? "Not reported")
+                .font(.system(size: 12))
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .opacity(0.5)
+        }
+        .foregroundStyle(current == nil ? AnyShapeStyle(Theme.secondary)
+                                        : AnyShapeStyle(.white.opacity(0.92)))
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .premiumCard(cornerRadius: 14)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.white.opacity(0.07)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Theme.cardStroke, lineWidth: 1))
     }
 }
 
@@ -775,8 +920,12 @@ struct BudsDisconnectedNote: View {
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(Theme.accent.opacity(0.9))
                 .padding(.bottom, 2)
+                .accessibilityHidden(true)
 
-            Text(buds.isPaired ? "Earbuds are away" : "No earbuds paired")
+            // "Away" was the phone app's word for the buds sitting in a closed case, and it
+            // reads as a place rather than a state. What is true, and what the fix follows
+            // from, is that the link is down.
+            Text(buds.isPaired ? "Earbuds aren't connected" : "No earbuds paired")
                 .font(.system(size: 15, weight: .semibold))
 
             Text(buds.isPaired
@@ -799,24 +948,34 @@ struct BudsDisconnectedNote: View {
 /// item even while the buds are away and the window is closed.
 struct AppMenuButton: View {
     @Environment(\.openWindow) private var openWindow
+    /// See `EnvironmentValues.isRenderingSnapshot`.
+    @Environment(\.isRenderingSnapshot) private var isSnapshot
 
     var body: some View {
-        Menu {
-            Button("Open \(AppInfo.name)") {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: AppInfo.mainWindowID)
+        if isSnapshot {
+            glyph
+        } else {
+            Menu {
+                Button("Open \(AppInfo.name)") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: AppInfo.mainWindowID)
+                }
+                Divider()
+                Button("Quit \(AppInfo.name)") { NSApplication.shared.terminate(nil) }
+            } label: {
+                glyph
             }
-            Divider()
-            Button("Quit \(AppInfo.name)") { NSApplication.shared.terminate(nil) }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.secondary)
-                .frame(width: 26, height: 26)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("More")
+    }
+
+    private var glyph: some View {
+        Image(systemName: "ellipsis")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.secondary)
+            .frame(width: 26, height: 26)
     }
 }

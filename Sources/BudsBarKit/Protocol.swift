@@ -386,7 +386,10 @@ enum BudsProtocol {
             case .previous: return "Previous track"
             case .next: return "Next track"
             case .volumeControl: return "Volume control"
-            case .noiseControl: return "Noise control"
+            // "Noise control" collides with the section heading of the same name, and in a
+            // menu of *actions* it reads as a destination rather than a verb. The gesture
+            // cycles the mode; the label says so.
+            case .noiseControl: return "Toggle noise control"
             }
         }
 

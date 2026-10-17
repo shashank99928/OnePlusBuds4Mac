@@ -5,6 +5,7 @@ import SwiftUI
 /// chips, the noise-control pills, and the app's one preference.
 struct MainWindowView: View {
     @Bindable var buds: Buds
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -22,12 +23,15 @@ struct MainWindowView: View {
         .frame(minWidth: 420, minHeight: 460)
         .premiumSurface()
         .onAppear { buds.refreshConnectionState() }
-        .animation(.smooth(duration: 0.28), value: buds.isConnected)
-        .animation(.smooth(duration: 0.28), value: buds.battery.enclosure == nil)
-        .animation(.smooth(duration: 0.28), value: buds.battery.left)
-        .animation(.smooth(duration: 0.28), value: buds.battery.right)
-        .animation(.smooth(duration: 0.28), value: buds.placement.left)
-        .animation(.smooth(duration: 0.28), value: buds.placement.right)
+        // Everything here is a cross-fade of a number or a row appearing; none of it carries
+        // meaning, and all of it is the kind of motion the system setting exists to stop.
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: buds.isConnected)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28),
+                   value: buds.battery.enclosure == nil)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: buds.battery.left)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: buds.battery.right)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: buds.placement.left)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: buds.placement.right)
     }
 
     // MARK: - Footer
@@ -68,6 +72,8 @@ struct MainWindowView: View {
 struct MainColumn: View {
     @Bindable var buds: Buds
     @State private var login = LaunchAtLogin()
+    /// See `EnvironmentValues.isRenderingSnapshot`.
+    @Environment(\.isRenderingSnapshot) private var isSnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -76,10 +82,14 @@ struct MainColumn: View {
             if buds.isConnected {
                 BatteryHero(buds: buds)
                 BatteryChipsRow(buds: buds)
+                // The phone's own order: what the buds *do* (noise control, audio effects),
+                // then the features you reach for (find my earbuds), then how they are
+                // configured (gestures), then read-only facts. Find sat after the gesture
+                // editor, which put the app's least-used screen above its most-used one.
                 NoiseControlSection(buds: buds)
                 SoundSection(buds: buds)
-                EarbudControlsSection(buds: buds)
                 FindMyEarbudsSection(buds: buds)
+                EarbudControlsSection(buds: buds)
                 DeviceDetailsSection(buds: buds)
             } else {
                 BudsDisconnectedNote(buds: buds)
@@ -115,6 +125,7 @@ struct MainColumn: View {
                 .frame(width: 30, height: 30)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.chip))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Launch at login")
@@ -128,11 +139,23 @@ struct MainColumn: View {
 
             Spacer(minLength: 6)
 
-            Toggle("Launch at login", isOn: Binding(
-                get: { login.isEnabled },
-                set: { login.set($0) }))
-                .toggleStyle(.switch)
-                .labelsHidden()
+            if isSnapshot {
+                // `ImageRenderer` cannot draw a `Toggle`; a switch state is a poor thing to
+                // pin in a golden image anyway, since it reflects the developer's login items.
+                Capsule()
+                    .fill(login.isEnabled ? Theme.selection : Color.white.opacity(0.18))
+                    .frame(width: 38, height: 22)
+                    .accessibilityHidden(true)
+            } else {
+                Toggle("Launch at login", isOn: Binding(
+                    get: { login.isEnabled },
+                    set: { login.set($0) }))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    // `labelsHidden` hides the title visually; the setting is still named for
+                    // anyone using a screen reader or keyboard navigation.
+                    .accessibilityLabel("Launch at login")
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,6 +175,7 @@ struct MainColumn: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondary)

@@ -25,6 +25,20 @@ enum Theme {
     /// Text that is present but not shouting.
     static let secondary = Color.white.opacity(0.60)
 
+    /// The fill behind a *selected* control.
+    ///
+    /// Deliberately not `accent`. White on the bright accent measures 2.82:1, and compositing
+    /// its usual 0.9 opacity over this background only brings it to 3.2:1 — under WCAG AA's
+    /// 4.5:1 for the 13pt labels these fills carry, and under even the 3:1 floor for non-text
+    /// contrast. Every selected mode pill, level capsule and EQ segment was failing. This
+    /// deeper blue measures 5.29:1 against white and is still unmistakably the blue one.
+    /// `accent` stays for glyphs, strokes and glows, where it sits on the dark surface and
+    /// passes at 5.2:1.
+    static let selection = Color(red: 0.16, green: 0.36, blue: 0.95)
+
+    /// The hairline around a selected control, so its edge reads without relying on hue alone.
+    static let selectionStroke = Color.white.opacity(0.45)
+
     /// "Live" indicator — connected, healthy.
     static let green = Color(red: 0.24, green: 0.86, blue: 0.55)
 }

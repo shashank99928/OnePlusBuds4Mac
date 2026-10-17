@@ -19,6 +19,18 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// it must not page the buds or open a control channel.
     static let isSelfChecking = CommandLine.arguments.contains("--selfcheck")
 
+    /// True for `--render-snapshots`: the binary draws the two surfaces to PNG and exits, so
+    /// there is nothing to connect to and a radio session would only make it slow.
+    static let isRenderingSnapshots = CommandLine.arguments.contains("--render-snapshots")
+
+    /// True when the process is doing something other than being the app. A protocol check
+    /// and a snapshot render both construct `Buds`, and neither wants a paging attempt, a
+    /// poll timer and an RFCOMM session behind it.
+    ///
+    /// `isHarvesting` is deliberately not included: capturing fixtures is the one thing that
+    /// genuinely needs the radio.
+    static let isDetached = isSelfChecking || isRenderingSnapshots
+
     /// Drives a fixed sequence so a raw-frame capture contains one clean example of every
     /// frame type. Fixtures are captured, never typed: every hand-written one so far has had
     /// length fields that disagree with its own bytes.
@@ -182,9 +194,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     override init() {
         super.init()
-        // A `--selfcheck` run is a build-time protocol test, not a launch, so nothing here
-        // touches the radio — no SDP query, no page attempt, no control channel.
-        if Self.isSelfChecking { return }
+        // A `--selfcheck` or `--render-snapshots` run is a build-time job, not a launch, so
+        // nothing here touches the radio — no SDP query, no page attempt, no control channel,
+        // no timers poking at the buds while a check is trying to be deterministic.
+        if Self.isDetached { return }
         device = Self.discoverDevice()
         syncName()
 
@@ -523,14 +536,17 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             guard let record else {
                 DispatchQueue.main.async {
                     self.isOpening = false
-                    self.lastError = "control service not found"
+                    // The messages in this file are the ones on screen, so they say what
+                    // happened to the user rather than naming the SDP record or the IOReturn
+                    // that produced them. The numbers are still in the trace.
+                    self.lastError = "Couldn't reach the earbuds' control channel."
                 }
                 return
             }
             guard record.getRFCOMMChannelID(&channelID) == kIOReturnSuccess else {
                 DispatchQueue.main.async {
                     self.isOpening = false
-                    self.lastError = "control service has no RFCOMM channel"
+                    self.lastError = "These earbuds don't offer a control channel."
                 }
                 return
             }
@@ -544,7 +560,8 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
                     self.channel = opened
                 } else {
                     // Most likely another host already holds the control channel.
-                    self.lastError = "control channel busy (\(Self.describe(result)))"
+                    self.lastError = "The earbuds' control channel is in use by something "
+                        + "else — the phone app, usually."
                 }
             }
         }
@@ -631,7 +648,7 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             channel.writeAsync(raw.baseAddress, length: UInt16(raw.count), refcon: nil)
         }
         if result != kIOReturnSuccess {
-            lastError = "write failed: \(Self.describe(result))"
+            lastError = "Couldn't send a command to the earbuds."
             return false
         }
         return true
@@ -641,7 +658,7 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     func rfcommChannelOpenComplete(_ channel: IOBluetoothRFCOMMChannel!, status error: IOReturn) {
         guard error == kIOReturnSuccess else {
-            lastError = "control channel open failed (\(Self.describe(error)))"
+            lastError = "Couldn't open the earbuds' control channel."
             self.channel = nil
             return
         }
@@ -676,10 +693,25 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// only way to obtain fixtures that are internally consistent, and it matters that it is
     /// reproducible, because the alternative — transcribing bytes by hand — has already
     /// produced fixtures whose length fields disagree with their own payloads.
+    ///
+    /// It writes to the buds, so it puts them back: the values restored are the ones the
+    /// handshake and first poll read off them a moment ago, not a fixed "off / balanced / 0",
+    /// which would silently move a user's settings. It runs only under `BUDSBAR_HARVEST=1`,
+    /// and the poll is suspended for the duration so the capture is not interleaved with it.
     private func runHarvest() {
         let readANC = BudsProtocol.encodeRequest(.anc, payload: [0x01, 0x01])
         let readEQ = BudsProtocol.encodeRequest(.eqPreset)
         let readBass = BudsProtocol.encodeRequest(.bassWave)
+
+        // What was found, for the restore at the end.
+        let priorMode = mode
+        let priorLevel = ancLevel
+        let priorEQ = eqPreset
+        let priorBass = bassWave
+        testLog("HARVEST found mode=\(priorMode.map { "\($0.mask)" } ?? "-") "
+                + "level=\(priorLevel.map { "\($0.mask)" } ?? "-") "
+                + "eq=\(priorEQ.map { "\($0.rawValue)" } ?? "-") "
+                + "bass=\(priorBass.map(String.init) ?? "-")")
 
         var steps: [(String, [UInt8])] = []
         for mode in NoiseMode.allCases {
@@ -695,16 +727,28 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         steps += [
             ("set eq bass", BudsProtocol.encodeSetEQPreset(.bass)),
             ("read eq", readEQ),
-            ("set eq balanced (restore)", BudsProtocol.encodeSetEQPreset(.balanced)),
+            ("set eq balanced", BudsProtocol.encodeSetEQPreset(.balanced)),
             ("read eq", readEQ),
             ("set basswave +2", BudsProtocol.encodeSetBassWave(2)),
             ("read basswave", readBass),
-            ("set basswave 0 (restore)", BudsProtocol.encodeSetBassWave(0)),
+            ("set basswave 0", BudsProtocol.encodeSetBassWave(0)),
             ("read basswave", readBass),
             ("read custom eq", BudsProtocol.encodeRequest(.customEQ)),
             ("read touch", BudsProtocol.encodeRequest(.touch)),
-            // Leave the buds as they were found.
-            ("restore off", BudsProtocol.encodeSetNoiseMask(NoiseMode.off.mask)),
+        ]
+
+        // Put the buds back the way they were found. ANC last, so the capture's final state
+        // matches the first line of this function's log.
+        let restoreMask = priorLevel.map { $0.mask }
+            ?? priorMode?.mask
+            ?? NoiseMode.off.mask
+        steps += [
+            ("restore basswave \(priorBass.map(String.init) ?? "0")",
+             BudsProtocol.encodeSetBassWave(priorBass ?? 0)),
+            ("restore eq \(priorEQ?.label ?? "balanced")",
+             BudsProtocol.encodeSetEQPreset(priorEQ ?? .balanced)),
+            ("restore anc 0x\(String(format: "%04x", restoreMask))",
+             BudsProtocol.encodeSetNoiseMask(restoreMask)),
             ("read anc", readANC),
         ]
 
@@ -913,6 +957,29 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     private func testLog(_ message: String) {
         FileHandle.standardError.write(Data("TEST \(message)\n".utf8))
+    }
+
+    // MARK: - Snapshots
+
+    /// Fills in the state a live session would have produced, for the snapshot renderer.
+    ///
+    /// The values are the decoded captures from `FixtureCorpus`, fed through the very same
+    /// `apply(_ frame:)` the radio goes through — not invented numbers. So a golden image
+    /// shows what this app draws against this unit, and a decoder change that altered what
+    /// the corpus means would change the images with it rather than leaving them stale.
+    func seedForSnapshot() {
+        name = Buds.fallbackName
+        isConnected = true
+        isControlChannelOpen = true
+        for capture in FixtureCorpus.frames {
+            var buffer = capture.bytes
+            for frame in BudsProtocol.drainFrames(from: &buffer) { apply(frame) }
+        }
+        // The capture was taken with the buds in the ear and the EQ on a preset; make that
+        // explicit so an empty corpus cannot silently produce an all-placeholder image.
+        if mode == nil { mode = .noiseCancellation }
+        if eqPreset == nil { eqPreset = .balanced }
+        if bassWave == nil { bassWave = 0 }
     }
 
     // MARK: - Errors

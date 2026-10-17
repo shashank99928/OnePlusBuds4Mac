@@ -6,6 +6,13 @@ final class FloatingPanelController {
     private var window: NSWindow?
     private var hideWorkItem: DispatchWorkItem?
 
+    /// A fade is motion, and this one is decoration. AppKit exposes the system setting
+    /// directly rather than through the SwiftUI environment, since this controller is not
+    /// inside a view hierarchy.
+    private var fadeDuration: TimeInterval {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.25
+    }
+
     func show(buds: Buds) {
         if window == nil {
             let hosting = NSHostingController(rootView: FloatingBatteryView(buds: buds))
@@ -41,7 +48,7 @@ final class FloatingPanelController {
         window.alphaValue = 0
         window.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.25
+            ctx.duration = fadeDuration
             window.animator().alphaValue = 1
         }
     }
@@ -49,7 +56,7 @@ final class FloatingPanelController {
     func hide() {
         guard let window, window.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.25
+            ctx.duration = fadeDuration
             window.animator().alphaValue = 0
         }, completionHandler: { window.orderOut(nil) })
     }
