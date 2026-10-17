@@ -15,11 +15,14 @@ enum NoiseMode: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Audio metaphors, not people: a crossed-out waveform for cancellation, the universal
+    /// "off" mark, and an ear for hearing your surroundings. The earlier person glyphs said
+    /// nothing about noise control.
     var symbol: String {
         switch self {
-        case .noiseCancellation: return "person.crop.circle"
-        case .off: return "person.crop.circle.fill"
-        case .transparency: return "person.crop.circle.badge.questionmark"
+        case .noiseCancellation: return "waveform.slash"
+        case .off: return "circle.slash"
+        case .transparency: return "ear"
         }
     }
 

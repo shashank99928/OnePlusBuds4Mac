@@ -28,7 +28,16 @@ fi
 
 # Ad-hoc signature. The bundle identifier stays fixed across rebuilds so the granted
 # Bluetooth permission survives; re-signing may still re-prompt once.
-codesign --force --sign - "$APP"
+#
+# For distribution, set SIGN_IDENTITY to a "Developer ID Application: …" identity. That
+# signs with the hardened runtime and a secure timestamp, which is what notarization
+# requires; see make-dmg.sh for the notarize-and-staple step.
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+    echo "signed with $SIGN_IDENTITY"
+else
+    codesign --force --sign - "$APP"
+fi
 
 echo "built $APP"
 echo "run:  open \"$APP\"     (or: \"./$APP/Contents/MacOS/OnePlusBuds4\"  to see stderr)"

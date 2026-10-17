@@ -125,4 +125,16 @@ hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" >/de
 rm -f "$RW_DMG"
 
 echo "built $(du -h "$OUT_DMG" | cut -f1 | tr -d ' ')  $OUT_DMG"
+
+# --- 8. Notarize (optional) -----------------------------------------------------------
+# Gatekeeper refuses to open a downloaded, unnotarized image. Give notarytool a stored
+# keychain profile (xcrun notarytool store-credentials <profile>) and name it here; the
+# ticket is stapled to the image so it also validates offline. Requires SIGN_IDENTITY to
+# have been set at build time — notarization rejects an ad-hoc signature.
+if [ -n "${NOTARY_PROFILE:-}" ]; then
+    echo "notarizing with profile '$NOTARY_PROFILE' (this can take a few minutes)…"
+    xcrun notarytool submit "$OUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$OUT_DMG"
+fi
+
 echo "install:  open \"$OUT_DMG\""
