@@ -1,22 +1,95 @@
 import AppKit
 import SwiftUI
 
+/// Identity constants, so the name and the version live in exactly one place.
+enum AppInfo {
+    static let name = "OnePlus Buds 4"
+    /// Scene id for the main window; used to re-open it.
+    static let mainWindowID = "main"
+
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+}
+
 @main
 struct BudsBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        // The app deliberately has no windows. The menu bar item is an NSStatusItem owned by
-        // the delegate rather than a MenuBarExtra: `MenuBarExtra(isInserted:)` kept the item
-        // on screen with the binding false, and this app's whole point is that it disappears
-        // along with the buds. `NSStatusItem.isVisible` does exactly what it says.
-        Settings { EmptyView() }
+        // The app now ships two surfaces. This is the window: a real, resizable window
+        // with a Dock presence, so the app is usable like any other Mac app. The
+        // menu-bar item is still owned by the delegate (see `AppDelegate`), which keeps
+        // its ability to disappear along with the buds.
+        Window(AppInfo.name, id: AppInfo.mainWindowID) {
+            MainWindowContent(buds: delegate.buds)
+        }
+        .defaultSize(width: 470, height: 740)
+        .windowResizability(.contentMinSize)
+        .commands { AppCommands() }
+    }
+}
+
+/// Hosts the window content and hands its `openWindow` action to the bridge, so AppKit
+/// code (the status item, Dock re-open) can summon the window too.
+private struct MainWindowContent: View {
+    @Environment(\.openWindow) private var openWindow
+    let buds: Buds
+
+    var body: some View {
+        MainWindowView(buds: buds)
+            .onAppear {
+                MainWindowBridge.shared.register { openWindow(id: AppInfo.mainWindowID) }
+            }
+    }
+}
+
+/// Re-opens the main window from outside SwiftUI.
+///
+/// SwiftUI owns the window, so the only supported way to show it again is its
+/// `openWindow` action. That action is captured once the window first appears and stays
+/// valid for the life of the app — including after the window has been closed — so
+/// storing it is enough. The fallback covers the window never having appeared at all.
+@MainActor
+final class MainWindowBridge {
+    static let shared = MainWindowBridge()
+
+    private var open: (() -> Void)?
+
+    func register(_ action: @escaping () -> Void) { open = action }
+
+    func show() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let open {
+            open()
+        } else {
+            NSApp.windows
+                .first { $0.canBecomeMain && !($0 is NSPanel) }?
+                .makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+/// The File menu. `newItem` is repurposed because "New" means nothing here — the app has
+/// one window — but a way to bring it up is exactly what belongs there.
+struct AppCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("Open \(AppInfo.name)") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: AppInfo.mainWindowID)
+            }
+            .keyboardShortcut("o")
+        }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
-    private let buds = Buds()
+    /// Shared by the window scene and the status item — one connection, two surfaces.
+    let buds = Buds()
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let floating = FloatingPanelController()
@@ -44,6 +117,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         BudsProtocol.selfCheck()
         #endif
 
+        // The design is a dark "night" surface, so pin the app to dark rather than let a
+        // light system appearance wash it out. This also darkens the window chrome and the
+        // popover so the whole app reads as one piece.
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+
         // Not `.transient`: that closes the popover whenever the app resigns active, and
         // connecting or disconnecting the buds shuffles activation enough to trip it — the
         // panel vanished the instant the power toggle was used. Dismissal is handled here
@@ -65,6 +143,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         self.wasConnected = buds.isConnected
         syncStatusItem()
+    }
+
+    /// The window is a first-class surface now, so the app must not quit when it is
+    /// closed — the status item stays, and the window can be re-opened from it.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    /// Clicking the Dock icon should bring the window back rather than do nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { MainWindowBridge.shared.show() }
+        return true
     }
 
     /// Adds or removes the item, and keeps its glyph in step. Driven by `Buds`' own poll, so
