@@ -1101,6 +1101,11 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         /// the one that is easiest to leave full of empty boxes and dashes that read as
         /// faults. It is rendered on purpose rather than assumed to be fine.
         case warmingUp
+        /// Paired, and the link is down: the buds are off, or asleep in a closed case. This is the
+        /// state a person looks at most of the time, and it has no readings at all — so it is the
+        /// one where the surface has to explain itself rather than draw empty boxes that read as
+        /// faults.
+        case disconnected
     }
 
     /// Fills in the state a live session would have produced, for the snapshot renderer.
@@ -1111,11 +1116,13 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// the corpus means would change the images with it rather than leaving them stale.
     func seedForSnapshot(_ state: SnapshotState = .connected) {
         name = Buds.fallbackName
-        isConnected = true
-        // A live connected session is always paired; without this the renderer draws a state
-        // the app cannot be in — connected but "Not paired" — and the power button comes out
+        // A live session is always paired, connected or not. Without this the renderer draws a
+        // state the app cannot be in — connected but "Not paired" — and the power button comes out
         // disabled on a fully-connected panel.
         isPairedOverride = true
+        // Nothing is fabricated in any state. The corpus defines the connected state; the others
+        // are defined by what is *absent*, which is the part worth pinning.
+        isConnected = state != .disconnected
         guard state == .connected else { return }
         isControlChannelOpen = true
         for capture in FixtureCorpus.frames {

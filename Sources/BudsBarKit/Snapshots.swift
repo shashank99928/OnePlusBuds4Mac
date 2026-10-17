@@ -52,21 +52,29 @@ enum Snapshots {
         /// read off the buds. Rendered because it is the state most likely to be left as a
         /// grid of dashes that read as faults, and the least likely to be looked at by hand.
         case panelWarming = "panel-warming"
+        /// The same popover with the buds off: paired, link down, nothing read. It is the state a
+        /// person looks at most of the time, so it is the one that most needs its empty state to
+        /// say something rather than show dashes.
+        case panelDisconnected = "panel-disconnected"
 
         var state: Buds.SnapshotState {
-            self == .panelWarming ? .warmingUp : .connected
+            switch self {
+            case .window, .panel: return .connected
+            case .panelWarming: return .warmingUp
+            case .panelDisconnected: return .disconnected
+            }
         }
 
         var width: CGFloat {
             switch self {
-            case .panel, .panelWarming: return 340
+            case .panel, .panelWarming, .panelDisconnected: return 340
             case .window: return 470
             }
         }
 
         @MainActor func content(_ buds: Buds) -> AnyView {
             switch self {
-            case .panel, .panelWarming:
+            case .panel, .panelWarming, .panelDisconnected:
                 // `PanelView` brings its own background and surface.
                 return AnyView(PanelView(buds: buds))
             case .window:

@@ -165,17 +165,29 @@ func main() {
 
     // Web derivatives of every golden, plus the hero, which is the window cropped to the part
     // that fits above the fold.
+    //
+    // The goldens are enumerated from the directory rather than listed here: a hand-maintained
+    // list stops covering a surface the moment one is added, and the failure is silent on both
+    // sides — no web image, and an `<img>` in the site pointing at a file that is not there.
     guard let hero = cropTop(window, height: heroCropHeight) else {
         FileHandle.standardError.write(Data("failed to crop the hero\n".utf8))
         exit(1)
     }
 
+    // Not goldens: the icon, the favicon and the social card are written elsewhere, and the
+    // window's derivative is named explicitly because the hero is cropped from it.
+    let notGoldens: Set<String> = ["icon.png", "favicon.png", "og.png", "window.png"]
+    let goldenNames = ((try? FileManager.default.contentsOfDirectory(atPath: assets.path)) ?? [])
+        .filter { $0.hasSuffix(".png") && !notGoldens.contains($0) }
+        .sorted()
+
     let derivatives: [(String, NSImage)] = [
         ("window.jpg", window),
         ("hero.jpg", hero),
-        ("panel.jpg", load(assets.appendingPathComponent("panel.png").path)),
-        ("panel-warming.jpg", load(assets.appendingPathComponent("panel-warming.png").path)),
-    ].compactMap { name, image in image.map { (name, $0) } }
+    ] + goldenNames.compactMap { name in
+        load(assets.appendingPathComponent(name).path)
+            .map { (name.replacingOccurrences(of: ".png", with: ".jpg"), $0) }
+    }
 
     for (name, image) in derivatives {
         guard let data = jpeg(image, quality: 0.86) else {

@@ -36,20 +36,26 @@ this channel is here.
 
 ## Screens
 
-| Main window | Menu bar | Menu bar, just connected |
+| Main window |
+| --- |
+| ![Main window](docs/assets/window.jpg) |
+
+| Menu bar | Menu bar, just connected | Menu bar, earbuds off |
 | --- | --- | --- |
-| ![Main window](docs/assets/window.jpg) | ![Menu-bar popover](docs/assets/panel.jpg) | ![Menu-bar popover the moment after connecting](docs/assets/panel-warming.jpg) |
+| ![Menu-bar popover](docs/assets/panel.jpg) | ![Menu-bar popover the moment after connecting](docs/assets/panel-warming.jpg) | ![Menu-bar popover with the earbuds off](docs/assets/panel-disconnected.jpg) |
 
 The window is resizable and reachable from the Dock. The menu-bar item is the quick-glance
 version: the controls you reach for while listening, and find-my-earbuds. It disappears along
 with the buds when they're away; the window and Dock icon stay, so the app is never
 unreachable — and the popover's "…" menu opens the window in the meantime.
 
-The third image is the popover about a second after connecting, before the buds have answered.
+The second image is the popover about a second after connecting, before the buds have answered.
 It is drawn deliberately, because that state is the easiest one to leave as a grid of dashes
-that read as faults, and the least likely to be looked at by hand.
+that read as faults, and the least likely to be looked at by hand. The third is the earbuds off —
+the state the menu-bar item is in most of the time, and the one where an empty panel has to say
+something rather than show nothing.
 
-All three images are generated from the app itself (`--render-snapshots`, below), so they
+All four images are generated from the app itself (`--render-snapshots`, below), so they
 cannot drift from what the app draws. They are the same files the snapshot test compares.
 
 ## Requirements
@@ -131,8 +137,8 @@ the views without launching the app.
   mode the UI can offer decodes back to itself.
 - **Golden images, at the widths the surfaces really render at.** 340pt is the popover and
   470pt is the window column; if a change makes the noise-control labels clip at either, a
-  test fails rather than someone noticing three commits later. The three goldens —
-  `window.png`, `panel.png` and `panel-warming.png` — are location-recorded in
+  test fails rather than someone noticing three commits later. The four goldens —
+  `window.png`, `panel.png`, `panel-warming.png` and `panel-disconnected.png` — are recorded in
   `Tests/BudsBarKitTests/SnapshotTests.swift` and compared per pixel against a fresh render.
   They live in the website's asset directory (`docs/assets`) on purpose, so the screenshot a
   visitor sees is byte-for-byte the one the test verifies. Regenerate deliberately with
@@ -222,13 +228,13 @@ hand-drawn, so they can be regenerated after a design change:
 swift Tools/make-icon.swift             # -> Resources/AppIcon.icns, docs/assets/{icon,favicon}.png
 swift Tools/make-dmg-background.swift   # -> Resources/dmg-background{,@2x}.png
 swift .build/debug/OnePlusBuds4 --render-snapshots
-                                        # -> docs/assets/{window,panel,panel-warming}.png
+                                        # -> docs/assets/{window,panel,panel-warming,panel-disconnected}.png
 swift Tools/make-site-assets.swift      # -> docs/assets/*.jpg, hero.jpg, og.png
 ./Tools/freeze-fixtures.sh              # re-freeze the fixture corpus from the .hex record
 ```
 
 `--render-snapshots` takes an optional directory and defaults to `docs/assets` — the goldens'
-own directory — and draws the three surfaces and exits. Because the images the README shows
+own directory — and draws every surface and exits. Because the images the README shows
 and the images the test compares are the same files, there is no second copy to go stale.
 
 All outputs are committed, so `./build.sh` and `./make-dmg.sh` work without running them.
@@ -274,7 +280,7 @@ and restores what it found. It only ever writes values from the allow-listed set
 | `Sources/BudsBarKit/PanelView.swift` | The menu-bar popover |
 | `Sources/BudsBarKit/FloatingBatteryView.swift` | The AirPods-style connect popup |
 | `Sources/BudsBarKit/FloatingPanelController.swift` | Positions and shows that popup |
-| `Sources/BudsBarKit/Snapshots.swift` | Renders the three surfaces for the goldens and `--render-snapshots` |
+| `Sources/BudsBarKit/Snapshots.swift` | Renders every surface for the goldens and `--render-snapshots` |
 | `Sources/BudsBarKit/FixtureCorpus.swift` | The captured frames, frozen (generated) |
 | `Sources/BudsBarKit/LaunchAtLogin.swift` | `SMAppService`-backed launch-at-login |
 | `Sources/OnePlusBuds4/main.swift` | The whole executable: one call into the library |

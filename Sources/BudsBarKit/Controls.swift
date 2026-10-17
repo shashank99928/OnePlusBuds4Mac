@@ -36,6 +36,16 @@ struct StatusDot: View {
 struct ControlsNotReady: View {
     var text: String
 
+    /// The two reasons a section can be waiting want different words, and only one is "reading".
+    ///
+    /// A read that has not landed yet has nothing to show. A closed control channel is reading
+    /// nothing at all, and the section is holding its last readings — the channel dropped while the
+    /// audio link stayed up. Saying "Reading…" there would be untrue about what the app is doing,
+    /// over exactly the values most likely to be mistaken for current.
+    static func wording(_ reading: String, channelOpen: Bool, hasReading: Bool) -> String {
+        (!channelOpen && hasReading) ? "Reconnecting to the earbuds…" : reading
+    }
+
     var body: some View {
         Text(text)
             .font(.system(size: 11))
@@ -554,7 +564,9 @@ struct NoiseControlSection: View {
             }
 
             if !canSwitchModes {
-                ControlsNotReady(text: "Reading the noise-control setting…")
+                ControlsNotReady(text: ControlsNotReady.wording(
+                    "Reading the noise-control setting…",
+                    channelOpen: buds.isControlChannelOpen, hasReading: buds.mode != nil))
             }
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: buds.mode)
@@ -742,7 +754,10 @@ struct SoundSection: View {
             BassWaveControl(buds: buds)
 
             if !isReady {
-                ControlsNotReady(text: "Reading the sound settings…")
+                ControlsNotReady(text: ControlsNotReady.wording(
+                    "Reading the sound settings…",
+                    channelOpen: buds.isControlChannelOpen,
+                    hasReading: buds.eqPreset != nil || buds.bassWave != nil))
             }
         }
         .disabled(!isReady)
@@ -840,7 +855,9 @@ struct EarbudControlsSection: View {
             }
 
             if !isReady {
-                ControlsNotReady(text: "Reading the gesture table from the earbuds…")
+                ControlsNotReady(text: ControlsNotReady.wording(
+                    "Reading the gesture table from the earbuds…",
+                    channelOpen: buds.isControlChannelOpen, hasReading: !buds.touchRules.isEmpty))
             }
         }
         .disabled(!isReady)
