@@ -249,12 +249,16 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   answers `1` to every request, accepted or not, so the app does not *act* on an ack; a write the
   buds decline is not reported as an error but shows up as the control snapping back to the old
   value on the next readback, a few seconds later.
-- **Which reply wins.** Readbacks carry a sequence byte. It has been measured once — the
-  multi-connect getter's three replies each echoed the request's sequence, `0x32`, `0x33`, `0x34`
-  — but one getter is not all of them, so the app does not yet use the byte to discard stale
-  replies. If a slow reply lands after a newer one, a control can briefly show the previous value
-  until the next poll — seconds later. The acks and this ordering are the two places where more
-  captures would turn a design decision into a check.
+- **Which reply wins.** Readbacks carry a sequence byte, and every reply measured here has
+  carried the request's own: the multi-connect getter's three came back `0x32`, `0x33`, `0x34`,
+  and the two getter sweeps — thirty-nine requests in all, from the battery to the spine getters —
+  each came back with the sequence it was sent with. The app still does not gate on the byte, and
+  that is a decision rather than an omission: replies arrive in order within a poll, and a close
+  tears the channel down and clears the state behind it, so a newer value has no older reply left
+  to lose a race to. Nor is "every getter echoes" an invariant that has been established — the
+  app's own polls for wear and for the EQ preset were not in those sweeps — so a probe that asks
+  the remaining ones, sequence in and sequence out, is written and waiting. The acks and this
+  ordering are the two places where more captures would turn a design decision into a check.
 
 ## The protocol
 
