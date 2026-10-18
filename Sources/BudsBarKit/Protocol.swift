@@ -367,6 +367,12 @@ enum BudsProtocol {
     /// `type` is the context (`0x01` when not on a call, `0x06` during one) and `gesture` the
     /// physical action. The two are packed as a little-endian pair by the rest of the family
     /// — `0x0201` is "double tap in the media context", i.e. `type 01, gesture 02`.
+    ///
+    /// The vendor SDK reads the same four bytes as `deviceType`, `button`, `buttonAction` and
+    /// `function` (`KeyFunctionInfo`) — the same order, so `side` is their `deviceType`, `type`
+    /// their `button`, `gesture` their `buttonAction` and `action` their `function`. The names
+    /// here are this app's reading of what the values mean on this hardware; the layout is the
+    /// SDK's.
     struct TouchRule: Equatable {
         var side: UInt8
         var type: UInt8

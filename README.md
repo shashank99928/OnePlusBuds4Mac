@@ -143,12 +143,12 @@ the views without launching the app.
   hardware is the only thing that settles what a write did. Every mode and level was set and
   read back; when this app sent `0x02` for Transparency the firmware stored Noise cancellation,
   which is how that bug was found.
-- **A captured fixture corpus.** `Tests/Fixtures/buds4-frames.hex` holds 23 raw RFCOMM frames
+- **A captured fixture corpus.** `Tests/Fixtures/buds4-frames.hex` holds 24 raw RFCOMM frames
   taken off the wire, with both length fields intact. Fixtures are *captured*, never typed:
   the self-check used to crash at launch because one hand-written fixture's `len` varint
   disagreed with its own payload-length field, and the parser was right to reject it. Nothing
   enters the corpus except through `Tools/freeze-fixtures.sh` from a real capture.
-- **`swift test`.** 13 tests across two classes — 9 protocol tests and 4 snapshot tests. The
+- **`swift test`.** 14 tests across two classes — 10 protocol tests and 4 snapshot tests. The
   checks are tests, not a launch hook: the corpus invariant, the crash as a regression test,
   the setter ids against the acknowledgements the hardware sends, the property that every
   mode the UI can offer decodes back to itself, and the property that the self-check *reports*
@@ -203,6 +203,12 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   [How the phone app does it](#how-the-phone-app-does-it).
 - **Slide → "Volume control".** The label is from the protocol write-up. That a slide changes
   *volume* rather than scrolling was not measured.
+- **A gesture the phone changes while this app runs.** The SDK models a *push* of the gesture
+  table as well as a getter, and the push's record is not the getter's: `UserInteractionEventInfo`
+  is five bytes — the same four fields plus a scene — with two-byte options after them. No frame
+  of that shape is in this corpus, and synthesising one to exercise a decoder against is the exact
+  mistake the fixture rule exists to prevent, so the app ignores the push and asks for the table
+  when the channel opens. A change made on the phone is unseen until the next connection or write.
 - **Custom EQ is read-only.** The upload format has never been transmitted by anyone and there
   is no documented delete, so the app reports whether a custom profile exists and does not
   write the buds' flash.
@@ -320,6 +326,24 @@ questions the captures could only hint at, and one thing no capture can show.
   it **up** to the next multiple of the model's grid (its `batteryRadix`, default `10`), so a byte
   of `23` is displayed as `30`. Every level this hardware has reported is already a multiple of
   ten, so the two agree here; this app shows the byte as it came.
+- **The gesture record is four bytes there, and so are its names.** `KeyFunctionInfo` reads them
+  as `deviceType` (`1` left, `2` right), `button` (`1` is where the media gestures live; the
+  corpus's other value, `6`, is the call scene this app leaves alone), `buttonAction` and
+  `function`. One label this app had been taking from the write-up is now confirmed by name:
+  `buttonAction 4` is tested by a class called `LongPressVolumeChildFragment`, so "Touch and hold"
+  is the long press rather than an assumption. Their gesture-test screen names a single, double,
+  triple and long sequence in that order (`spSingleClick*` through `spLongClick*`), which is where
+  the write-up's `2` double and `3` triple come from as well. The app offers the four codes a
+  gesture can be configured to (`2`–`5`) and leaves `buttonAction 1`, the single tap, alone: the
+  corpus holds that record with action `none`, and nothing captured here shows the phone offering
+  single tap for this model.
+- **Their action list runs past the codes this app offers.** The corpus's `function` values are
+  `0` and `5`–`8` — nothing, previous, next, volume control, noise control, all of which the app
+  offers — plus `0x1c` and `0x1d` in the call scene, while the SDK's own screen tests for `17`
+  (game mode), `25` (AI summary) and `26`/`27` (AI translation), each behind a per-model feature
+  flag their app reads from a config this one cannot see (`WhitelistConfigDTO.Function`). A code
+  offered because the vendor's list has it, on a model whose config does not, is a menu entry that
+  does nothing, so the app offers the codes this hardware has been seen to store.
 - **The table is read-only because the wire says so.** Their screen can connect and disconnect a
   peer, but that goes through an app-side flow rather than a captured setter: no frame this
   project has seen names a multi-connect slot to change. So this app reports the table and offers
