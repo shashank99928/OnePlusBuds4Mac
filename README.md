@@ -240,6 +240,16 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   SDK refuses to send, so nothing here offers a switch for it. What the row can say is what the
   buds report; it cannot say what macOS believes the link is using, because macOS does not expose
   that.
+- **Prompt volume.** The phone has a slider for the volume of the earbuds' own prompt voice. The
+  reading is measured — `0x0130` answered `[00 06]`, asked exactly the way their SDK asks it — and
+  the write is known from their code, one byte, where the command-name table calls it
+  `setVolumeValueInfo`. What is not measured is the firmware's own range: the 1–10 scale is their
+  widget's, and nothing on the wire states a bound, so a slider here would be drawing a top that
+  no frame has reported. The experiment that would settle it is written and waiting — write each
+  candidate, read it back, and see whether the firmware clamps or stores whatever it is sent, the
+  same technique that found the noise-control encodings and the gesture action codes. It is a
+  write to someone's earbuds rather than a read, so it waits for a run that means it rather than
+  happening on the way past.
 - **Firmware updates** are out of scope entirely: the OTA path is a separate channel.
 - **The charging bit.** The top bit of a battery byte is treated as "charging" — seen on this
   hardware once, and named as a mask in the vendor SDK's own `BatteryInfo`
@@ -395,6 +405,13 @@ questions the captures could only hint at, and one thing no capture can show.
   answered `02`, so the app says AAC, and it says it as a reading rather than as a guess about
   the audio. The setter beside it (`setHighAudioCodecType`, `0x041a`) is one of the commands the
   vendor's own SDK refuses to send, so the row is read-only and the UI offers no codec switch.
+- **The prompt-volume row is a value, and its scale is their widget's.** The phone's More settings
+  has a slider for the volume of the earbuds' own prompt voice: `getVolumeValueInfo` (`0x0130`)
+  for the reading and `setVolumeValueInfo` (`0x0427`) for the writing, which their SDK builds as
+  one byte, and this hardware answers `06`. What `06` is out of is not in the reply — it is in
+  their slider: `MelodyPromptVolumeSeekBarPreference` starts at `barMaxValue = 10` and
+  `mOffset = 1`, prints `value × 10%`, and draws a mute icon at `1`, so their screen reads the
+  byte as 10%–100%. That is a scale their UI supplies to a number the buds hand over.
 - **Their screen is built from a config their server sends, and this hardware declines several
   of its rows.** `WhitelistConfigDTO.Function` is a per-model feature flag set — `spatialTypes`,
   `gameMode`, `whiteNoise`, `adaptiveEar`, `earScan`, `aiClearCall`, `tapLevelSetting`,
