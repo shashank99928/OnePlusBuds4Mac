@@ -501,8 +501,13 @@ enum BudsProtocol {
                          payload: [0xfb, 0x05, UInt8(bitPattern: clamped)])
     }
 
-    /// Rings the given buds. Fire-and-forget: the tone stops itself and there is no opcode to
-    /// stop it early, so the UI must not offer one.
+    /// Rings the given buds — or, with an empty list, asks them to stop.
+    ///
+    /// The payload names the slots to ring, so naming none is the one stop request this
+    /// vocabulary can express, and it needs no id the corpus does not already allow. A capture
+    /// cannot settle whether the firmware honours an empty list — the setter is answered with a
+    /// bare result byte whether it rings or not — so this stays a request, and the UI offers
+    /// Stop beside Ring instead of claiming the tone is over.
     static func encodeFind(_ slots: [BatterySlot]) -> [UInt8] {
         // The count is one byte: more than 255 buds cannot be named. The UI offers two. Truncate
         // rather than trap, so a bad caller loses the command instead of the process.
@@ -1160,6 +1165,8 @@ enum BudsProtocol {
         check(tail(encodeFind([.left]), from: 9) == [0x01, 0x01], "find left only")
         check(tail(encodeFind([.right]), from: 9) == [0x01, 0x02], "find right only")
         check(tail(encodeFind([.left, .right]), from: 9) == [0x02, 0x01, 0x02], "find both")
+        // Stop is the same setter naming no buds at all, so its whole payload is the zero count.
+        check(tail(encodeFind([]), from: 9) == [0x00], "find stop names no buds")
 
         // MARK: Frames that must not move anything
 

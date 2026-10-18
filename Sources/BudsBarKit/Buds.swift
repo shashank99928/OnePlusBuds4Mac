@@ -671,10 +671,20 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         refreshAfterSet()
     }
 
-    /// Rings the given buds. There is no stop opcode — the tone self-terminates — so this is
-    /// deliberately fire-and-forget.
+    /// Rings the given buds.
     func find(_ slots: [BudsProtocol.BatterySlot] = [.left, .right]) {
         send(BudsProtocol.encodeFind(slots))
+    }
+
+    /// Asks the buds to end a tone that `find` started.
+    ///
+    /// The vendor app only ever rings: the corpus has no stop frame, and the setter is answered
+    /// with a bare result byte whether or not a tone is playing, so no capture can confirm a
+    /// stop. This re-uses the allowlisted find setter with an empty slot list — the same request
+    /// as "ring nothing" — and the UI words it as a request, not as a fact, because whether the
+    /// firmware honours it can only be settled by ear.
+    func stopFind() {
+        send(BudsProtocol.encodeFind([]))
     }
 
     /// What a gesture currently does, taken from the left earbud. The phone keeps the two in

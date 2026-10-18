@@ -778,14 +778,21 @@ struct FindMyEarbudsSection: View {
             Text("Find my earbuds")
                 .font(.system(size: 15, weight: .semibold))
 
-            Text("Plays a tone in the earbuds. It stops on its own.")
+            // The vendor app only rings, and no capture can show whether the firmware acts on a
+            // stop, so the sentence says the earbuds are *asked* rather than promising silence.
+            Text("Plays a tone in the earbuds. Stop asks them to end it.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.secondary)
 
             HStack(spacing: 8) {
-                ringButton("Left", slots: [.left], name: "left earbud")
-                ringButton("Right", slots: [.right], name: "right earbud")
-                ringButton("Both", slots: [.left, .right], name: "both earbuds")
+                findButton("Left", glyph: "speaker.wave.2.fill",
+                           spoken: "Play a tone in the left earbud") { buds.find([.left]) }
+                findButton("Right", glyph: "speaker.wave.2.fill",
+                           spoken: "Play a tone in the right earbud") { buds.find([.right]) }
+                findButton("Both", glyph: "speaker.wave.2.fill",
+                           spoken: "Play a tone in both earbuds") { buds.find([.left, .right]) }
+                findButton("Stop", glyph: "speaker.slash.fill",
+                           spoken: "Ask the earbuds to stop the tone") { buds.stopFind() }
             }
 
             if !enabled {
@@ -795,13 +802,11 @@ struct FindMyEarbudsSection: View {
         .disabled(!enabled)
     }
 
-    private func ringButton(_ title: String, slots: [BudsProtocol.BatterySlot],
-                            name: String) -> some View {
-        Button {
-            buds.find(slots)
-        } label: {
+    private func findButton(_ title: String, glyph: String, spoken: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2.fill")
+                Image(systemName: glyph)
                     .font(.system(size: 11, weight: .medium))
                     .accessibilityHidden(true)
                 Text(title).font(.system(size: 13, weight: .semibold))
@@ -821,7 +826,7 @@ struct FindMyEarbudsSection: View {
         .opacity(channelDim(enabled))
         // The button's own label is one word — "Both" — and the old spoken name was
         // "Play a tone in the Both earbud". The spoken name is written out in full.
-        .accessibilityLabel("Play a tone in the \(name)")
+        .accessibilityLabel(spoken)
     }
 }
 

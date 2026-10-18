@@ -30,7 +30,9 @@ readback against the hardware, not a display-only imitation.
   an AirPods-style floating popup when the buds connect.
 - **In-ear detection** — each slot reports whether that bud is in use, resting in the case,
   or being held.
-- **Find my earbuds** — rings the left, the right, or both.
+- **Find my earbuds** — rings the left, the right, or both, and offers a Stop that asks the
+  buds to end the tone. The vendor app has no Stop; the request re-uses the find setter with no
+  earbuds named, and whether the firmware honours it is the one thing a capture cannot show.
 - **Earbud controls** — remaps the media touch gestures (double tap, triple tap, touch and
   hold, slide) to what the buds actually support. Only the media context is remappable.
 - **Firmware readout** — the string the earbuds report, shown exactly as they report it: a
@@ -128,7 +130,7 @@ The app is `BudsBarKit`, a library, plus a four-line executable at
 `Sources/OnePlusBuds4/main.swift`. That split is what lets `swift test` reach the protocol and
 the views without launching the app.
 
-- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 127 checks, but the
+- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 128 checks, but the
   hardware is the only thing that settles what a write did. Every mode and level was set and
   read back; when this app sent `0x02` for Transparency the firmware stored Noise cancellation,
   which is how that bug was found.
@@ -185,8 +187,10 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   no setter for the toggle has ever been seen. The frame is recognised as a notification and
   ignored, the same treatment every unmodelled topic gets, rather than a device list invented
   from a single sample. More captures close this the way the rest of the protocol was closed.
-- **What the find-my-earbuds tone sounds like.** The command is sent and accepted; it was
-  never confirmed by ear on both buds.
+- **The find-my-earbuds tone.** Ringing is answered with a bare result byte, so no capture shows
+  a tone starting or stopping, and neither the ring nor the stop was confirmed by ear. Stop sends
+  the same allowlisted setter with an empty slot list — the only stop this vocabulary can
+  express — and the UI words it as a request rather than as a fact.
 - **Slide → "Volume control".** The label is from the protocol write-up. That a slide changes
   *volume* rather than scrolling was not measured.
 - **Custom EQ is read-only.** The upload format has never been transmitted by anyone and there
