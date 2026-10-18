@@ -138,6 +138,62 @@ final class ProtocolTests: XCTestCase {
 
     // MARK: Properties the UI depends on
 
+    /// The multi-connect table, decoded from the one capture of it the corpus holds.
+    ///
+    /// The layout is the vendor SDK's own parser — a count, then records of six address bytes, a
+    /// length byte, a state byte, a flag byte, a length-prefixed name — and the point of this
+    /// test is the claim that makes it more than a fit to one sample: under that layout the
+    /// second record lands on byte 35 of the 55-byte body and the pair consumes the body
+    /// *exactly*, with nothing left over and nothing missing. A stride that was one byte out
+    /// would not do that.
+    func testTheDeviceTableDecodesToWhatTheCaptureRecords() throws {
+        let capture = try XCTUnwrap(
+            FixtureCorpus.frames.first { $0.name == "notify-devices" },
+            "the device-table capture is missing from the corpus")
+        var bytes = capture.bytes
+        let frame = try XCTUnwrap(BudsProtocol.drainFrames(from: &bytes).first,
+                                  "the device-table capture did not parse")
+        XCTAssertTrue(bytes.isEmpty, "the capture is more than the one frame")
+        let body = Array(frame.payload.dropFirst())
+
+        let table = try XCTUnwrap(BudsProtocol.linkedDevices(body),
+                                  "the captured table did not decode")
+        XCTAssertEqual(table.count, 2)
+        XCTAssertEqual(table.first?.name, "Shashank’s MacBook Pro")
+        XCTAssertEqual(table.first?.address, "26:68:69:83:be:b0")
+        XCTAssertEqual(table.first?.state, .connected)
+        XCTAssertEqual(table.first?.isCurrentDevice, true)
+        XCTAssertEqual(table.first?.isMainAudioDevice, false)
+        XCTAssertEqual(table.first?.isAudioActive, false)
+        XCTAssertNil(table.first?.deviceType, "this capture leaves the device-type bits unset")
+        XCTAssertEqual(table.dropFirst().first?.name, "shsxnk S23")
+        XCTAssertEqual(table.dropFirst().first?.state, .notConnected)
+        XCTAssertEqual(table.dropFirst().first?.isCurrentDevice, false)
+
+        // The stride, stated as an assertion rather than as a comment: walking the records by
+        // `7 + length` from the count byte has to land the second record where the capture
+        // shows it and end on the body's last byte, with nothing left over and nothing missing.
+        // This is the part a fit to one sample could not fake, and it is why the second record's
+        // six address bytes start at 35 rather than at the first `00` inside its name.
+        var offset = 1
+        var offsets: [Int] = []
+        while offsets.count < table.count {
+            offsets.append(offset)
+            offset += 7 + Int(body[offset + 6])
+        }
+        XCTAssertEqual(offsets, [1, 35], "records begin where the previous record's stride says")
+        XCTAssertEqual(offset, body.count, "and the last one ends on the body's last byte")
+
+        // A length byte that disagrees with the name it precedes is not a table this app can
+        // read, and the honest answer is no update rather than a list fitted around the damage.
+        var mismatched = body
+        mismatched[7] = 0x1c
+        XCTAssertNil(BudsProtocol.linkedDevices(mismatched))
+        XCTAssertNil(BudsProtocol.linkedDevices(Array(body.dropLast(4))), "a truncated record")
+        XCTAssertNil(BudsProtocol.linkedDevices([0x03] + body), "a count past the body")
+        XCTAssertEqual(BudsProtocol.linkedDevices([0x00]), [], "a zero count is an empty table")
+    }
+
     /// Every mask the UI can offer has to decode back to the mode it came from, and no two
     /// selectable values may collide.
     ///

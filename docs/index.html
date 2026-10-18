@@ -42,7 +42,7 @@
   "applicationSubCategory": "Audio",
   "operatingSystem": "macOS 26 or later",
   "processorRequirements": "Apple silicon; Intel Macs by building from source",
-  "softwareVersion": "1.1.0",
+  "softwareVersion": "1.1.1",
   "releaseNotes": "https://github.com/shashank99928/OnePlusBuds4Mac/releases",
   "isAccessibleForFree": true,
   "license": "https://opensource.org/license/mit",
@@ -51,7 +51,7 @@
   "url": "https://shashank99928.github.io/OnePlusBuds4Mac/",
   "screenshot": "https://shashank99928.github.io/OnePlusBuds4Mac/assets/og.png",
   "image": "https://shashank99928.github.io/OnePlusBuds4Mac/assets/og.png",
-  "description": "A native macOS app that controls OnePlus Buds 4 over the earbuds' own control channel: noise cancellation, Transparency, Adaptive, Sound Master EQ, BassWave, touch gestures, find-my-earbuds, battery and firmware. Free and open source.",
+  "description": "A native macOS app that controls OnePlus Buds 4 over the earbuds' own control channel: noise cancellation, Transparency, Adaptive, Sound Master EQ, BassWave, touch gestures, find-my-earbuds, battery, linked devices and firmware. Free and open source.",
   "featureList": [
     "Noise cancellation with Low, Moderate, High and Auto levels",
     "Transparency, Adaptive and Off modes",
@@ -60,6 +60,7 @@
     "Find my earbuds tone",
     "Touch gesture remapping",
     "Per-earbud and case battery",
+    "Linked devices, as the earbuds report them",
     "Firmware readout",
     "Menu-bar panel and a full window"
   ],
@@ -260,7 +261,9 @@
         <h2>Everything the phone app can do</h2>
         <p>
           The same set, laid out the way the phone lays it out — so it is already familiar, and
-          nothing needs learning.
+          nothing needs learning. Where the phone changes something the earbuds' own protocol
+          does not expose — writing a custom EQ profile, or connecting and disconnecting a
+          linked device — the app reads and reports instead of pretending otherwise.
         </p>
       </div>
 
@@ -309,6 +312,15 @@
             held — so "connected but silent" stops being a mystery.
           </p>
           <span class="tag">In ear · in case · held</span>
+        </div>
+
+        <div class="card">
+          <h3><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="2"/><rect x="14" y="7" width="8" height="12" rx="2"/><path d="M6.5 17h.01"/></svg></span> Linked devices</h3>
+          <p>
+            What the earbuds report as linked to them: each device by name, which entry is this
+            Mac, and whether it is connected or carrying the audio.
+          </p>
+          <span class="tag">Phone · computer · tablet</span>
         </div>
 
         <div class="card">
@@ -362,13 +374,14 @@
       <div class="screens">
         <div class="screen">
           <figure>
-            <img class="window-shot" src="assets/window.jpg" width="940" height="2651"
+            <img class="window-shot" src="assets/window.jpg" width="940" height="3025"
                  loading="lazy" decoding="async"
-                 alt="The main window: battery hero, per-earbud chips, the noise-control grid, Sound Master EQ, BassWave, Find my earbuds, the gesture table and the firmware readout.">
+                 alt="The main window: battery hero, per-earbud chips, the noise-control grid, Sound Master EQ, BassWave, Find my earbuds, the gesture table, the linked-devices list and the firmware readout.">
             <figcaption>
               <b>The main window</b>
-              Battery, noise control, sound, find-my-earbuds, gestures, firmware — the whole app
-              in one scroll. Resizable down to a small panel and up to whatever you like.
+              Battery, noise control, sound, find-my-earbuds, gestures, linked devices,
+              firmware — the whole app in one scroll. Resizable down to a small panel and up to
+              whatever you like.
             </figcaption>
           </figure>
         </div>

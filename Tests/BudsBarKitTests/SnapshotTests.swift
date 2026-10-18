@@ -143,6 +143,30 @@ final class SnapshotTests: XCTestCase {
             },
 
             ComponentGolden(
+                name: "linked-devices",
+                state: "the corpus's multi-connect push replayed: this Mac, marked as the "
+                     + "device the buds are talking to and connected, with the phone beside it",
+                width: 470
+            ) { [self] in
+                let buds = seeded(.connected)
+                ingest("notify-devices", into: buds)
+                return onDarkSurface(LinkedDevicesSection(buds: buds), padding: 22)
+            },
+
+            ComponentGolden(
+                name: "linked-devices-empty",
+                state: "no table pushed yet, which is the card for the first moments after "
+                     + "connecting and the state a window golden never shows",
+                width: 470
+            ) { [self] in
+                // The corpus replays the table, so the empty branch is cleared by hand: what is
+                // being pinned is the wording, and no capture holds an empty table to replay.
+                let buds = seeded(.connected)
+                buds.linkedDevices = []
+                return onDarkSurface(LinkedDevicesSection(buds: buds), padding: 22)
+            },
+
+            ComponentGolden(
                 name: "disconnected-note-paired",
                 state: "paired but link down — \"Earbuds aren't connected\"",
                 width: 340

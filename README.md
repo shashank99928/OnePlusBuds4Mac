@@ -31,6 +31,11 @@ readback against the hardware, not a display-only imitation.
   charge, the app says so rather than leaving a number-shaped hole.
 - **In-ear detection** — each slot reports whether that bud is in use, resting in the case,
   or being held.
+- **Linked devices** — what the buds report as linked to them: the phone app's Dual connection
+  screen, as a reading. Each entry gives its name, its state, whether it is the device the buds
+  are talking to (this Mac), and whether it carries the audio. Nothing here connects or
+  disconnects a peer — no setter for that has ever been seen on the wire — so the card is a fact
+  rather than a control.
 - **Find my earbuds** — rings the left, the right, or both, and offers a Stop that asks the
   buds to end the tone. The stop is the vendor's own exit-find request, byte for byte: their app
   has the command but no control that reaches it, which is why a phone can only wait the tone
@@ -132,7 +137,7 @@ The app is `BudsBarKit`, a library, plus a four-line executable at
 `Sources/OnePlusBuds4/main.swift`. That split is what lets `swift test` reach the protocol and
 the views without launching the app.
 
-- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 128 checks, but the
+- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 144 checks, but the
   hardware is the only thing that settles what a write did. Every mode and level was set and
   read back; when this app sent `0x02` for Transparency the firmware stored Noise cancellation,
   which is how that bug was found.
@@ -181,14 +186,14 @@ swift .build/debug/OnePlusBuds4 --render-snapshots   # -> docs/assets
 
 Being explicit about the gaps, so nobody mistakes them for settled:
 
-- **Dual connection.** The phone app shows and changes which devices the buds are linked to.
-  This app does not, and it is the one phone-app feature that has no counterpart here. The buds
-  do push a connected-device notification — one is in the corpus, and its payload carries the
-  device names as length-prefixed strings — but the fields around those strings have never been
-  captured in a form that can be read back without guessing, `0x12` has no captured reply, and
-  no setter for the toggle has ever been seen. The frame is recognised as a notification and
-  ignored, the same treatment every unmodelled topic gets, rather than a device list invented
-  from a single sample. More captures close this the way the rest of the protocol was closed.
+- **Dual connection.** The reading is closed; the writing is not. The buds push the table of
+  what is linked to them, and this app now decodes it — the layout is the vendor SDK's own
+  multi-connect parser and the corpus frame consumes exactly to its last byte under it, so the
+  fields are read rather than fitted. What remains unverified is the other half: **no setter for
+  connecting or disconnecting a peer has ever been seen on the wire**, and the SDK's getter for
+  the table (`0x12`, an empty payload) has no captured reply here, so the app reads the push and
+  does not poll. The card reports; it does not control. More captures close the writing half the
+  way the reading half was closed.
 - **The find-my-earbuds tone.** Ringing is answered with a bare result byte, and so is the stop.
   Five payload shapes — the vendor's `[0x01]` ring and `[0x00]` stop among them — were put on the
   wire one at a time, and every one came back `0x8400 len=1 payload=[01]`: the reply says nothing
@@ -240,6 +245,16 @@ buds are out of the case, whatever the phone app reads it from. The app still dr
 because the wear report is real evidence that a case is there, but it labels that chip "Not
 reported" instead of leaving a dash that reads like a value still loading.
 
+A second notification topic is read back the same way. Topic `0x06` is the **multi-connect
+table** — the buds' own list of what is linked to them — and its body is a count followed by
+that many records of six address bytes, a length byte, a state byte, a flag byte, a name length
+and the name. The length byte is `3 + nameLength`, which is what makes it a stride rather than a
+guess: in the corpus frame the two records begin at offsets 1 and 35 of a 55-byte body and the
+second ends exactly at the last byte. A body that does not add up — a record running past the
+end, a length byte that disagrees with the name it precedes, a count promising more records than
+are there — yields **no update at all**, so a half-read list can never reach the UI dressed as a
+fact. The layout itself is the vendor SDK's, below.
+
 ## How the phone app does it
 
 The phone app's own protocol stack is the second opinion this protocol deserves. `HeyMelody`
@@ -278,6 +293,20 @@ questions the captures could only hint at, and one thing no capture can show.
   bud: their find call is per-device and their screen has one play button. Per-earbud ringing is
   therefore this app's extension of the vocabulary, not something the phone does, and whether it
   and the stop are honoured is settled by ear rather than by a trace.
+- **The device table is a real structure, not a blob.** Notification `0x0204` with `payload[0]`
+  `6` is dispatched to the SDK's own multi-connect parser, which decodes it as
+  `[count][six address bytes][length][state][flags][nameLength][name]` and strides by
+  `7 + length`. That is where this app's decoder comes from — not from fitting bytes to one
+  sample. The same parser supplies the state numbering their screen switches on (`1` connecting,
+  `2` connected, `4` disconnecting; `0` their list treats as available to connect) and the flag
+  bits (`0x01` the current device, `0x02` main audio, `0x04` audio active, `0x38` a device type
+  their icon table renders as `1` phone, `2` computer, `3` tablet, `4` watch). The matching
+  getter is SDK command `274` (`0x12`) with an empty payload — the id this app already carries —
+  though its reply has never been captured here, so the app reads the push and does not poll.
+- **The table is read-only because the wire says so.** Their screen can connect and disconnect a
+  peer, but that goes through an app-side flow rather than a captured setter: no frame this
+  project has seen names a multi-connect slot to change. So this app reports the table and offers
+  no buttons for it, the same line the app draws everywhere else.
 
 ## Releasing
 

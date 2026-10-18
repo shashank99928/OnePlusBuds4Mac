@@ -269,6 +269,10 @@ enum BudsProtocol {
         case eqPreset(EQPreset)
         /// The BassWave level, −5…+5.
         case bassWave(Int)
+        /// The buds' multi-connect table, whole. A table that cannot be read back is not an
+        /// empty table: `linkedDevices(_:)` returns nil for one it cannot trust and the frame
+        /// then yields no update at all, so a bad parse cannot silently clear the list.
+        case linkedDevices([LinkedDevice])
     }
 
     enum BatterySlot: UInt8 {
@@ -296,6 +300,66 @@ enum BudsProtocol {
 
         var isStowed: Bool { self == .inCase }
         var isWorn: Bool { self == .inEar }
+    }
+
+    /// One device in the buds' multi-connect table — the phone app's "Dual connection" list.
+    ///
+    /// This is the one phone-app screen with no counterpart on the Mac, and the reason is in
+    /// the protocol: the table arrives as a push, and no setter for connecting or disconnecting
+    /// a peer has ever been seen on the wire. So it is read-only here, and says only what the
+    /// buds said.
+    ///
+    /// The field order and meanings are the vendor SDK's — `MultiConnectInformationElement` and
+    /// the parser in its `CommandUtil` — not an inference from one sample. Under that layout the
+    /// corpus frame consumes exactly to its last byte, which is what a wrong stride would not do.
+    struct LinkedDevice: Equatable {
+        /// The address the buds know the peer by. Phones and Macs use a private address that can
+        /// change between sessions, so this is identity for drawing only: `isCurrentDevice` is
+        /// what says which entry is this Mac.
+        var address: String
+        var name: String
+        /// `nil` when the byte is a value the vendor numbering does not name.
+        var state: ConnectionState?
+        /// The entry the buds are talking to on this link — in practice, this Mac.
+        var isCurrentDevice: Bool
+        /// The entry currently carrying the audio.
+        var isMainAudioDevice: Bool
+        var isAudioActive: Bool
+        /// What the peer is, from the vendor's own icon table, or `nil` where it has none.
+        var deviceType: DeviceType?
+    }
+
+    /// The connection states the vendor's multi-device screen switches on. `0` is the state its
+    /// list treats as available to connect, the others are named in its own messages ("handheld
+    /// is in connecting state", "in disconnecting state"). Values outside these fall out of
+    /// `init?(rawValue:)` rather than being guessed into a state.
+    enum ConnectionState: Int, Equatable {
+        case notConnected = 0
+        case connecting = 1
+        case connected = 2
+        case disconnecting = 4
+    }
+
+    /// What a peer is, per the vendor's icon selection: `1` phone, `2` computer, `3` tablet,
+    /// `4` watch, everything else its default icon. All three bits were zero in the one capture
+    /// this app has, so the app draws the default too rather than assuming a laptop.
+    enum DeviceType: Int, Equatable {
+        case phone = 1
+        case computer = 2
+        case tablet = 3
+        case watch = 4
+
+        /// The vendor's icon table, said in this platform's vocabulary. The names live here
+        /// rather than at the call site so `check-symbols.swift` can see them: SwiftUI draws
+        /// nothing at all for a name the OS does not know.
+        var symbol: String {
+            switch self {
+            case .phone: return "iphone"
+            case .computer: return "laptopcomputer"
+            case .tablet: return "ipad"
+            case .watch: return "applewatch"
+            }
+        }
     }
 
     /// One row of the touch-gesture table.
@@ -695,8 +759,57 @@ enum BudsProtocol {
         // (0x0800) is 0x00 either way. `anc` handles both and stays silent when the value is
         // ambiguous, so the poll is what actually keeps the panel honest.
         case 0x03: return anc(body)
+        // The multi-connect table. The vendor's notification dispatcher numbers this event `6`
+        // too, so this app's "topic" byte is its "event" byte.
+        case 0x06: return linkedDevices(body).map { [.linkedDevices($0)] } ?? []
         default: return []
         }
+    }
+
+    /// The buds' multi-connect table: `[count]`, then `count` records of
+    /// `[address 6][length][state][flags][nameLength][name]`.
+    ///
+    /// `length` is `3 + nameLength` — the record's bytes after itself — and both parsers stride
+    /// by it: the corpus frame's two records start at 1 and 35 of a 55-byte body and the last
+    /// one ends exactly at the end, which is the check that the layout is the vendor's and not
+    /// a fit to one example.
+    ///
+    /// Returns nil — no update — rather than a partial list when anything does not add up: a
+    /// record that runs past the body, a length byte that disagrees with the name it precedes,
+    /// or a count that promises more records than the body holds. The vendor's parser discards
+    /// the whole table in the same situations (it returns null), and the alternative is showing
+    /// a device list that was half-read.
+    static func linkedDevices(_ body: [UInt8]) -> [LinkedDevice]? {
+        guard let count = body.first else { return nil }
+        guard count > 0 else { return [] }
+        var devices: [LinkedDevice] = []
+        var index = 1
+        for _ in 0..<Int(count) {
+            // The five fields that are fixed width, then the name.
+            guard index + 10 <= body.count else { return nil }
+            let address = body[index..<(index + 6)]
+                .map { String(format: "%02x", $0) }.joined(separator: ":")
+            let length = Int(body[index + 6])
+            let state = body[index + 7]
+            let flags = body[index + 8]
+            let nameLength = Int(body[index + 9])
+            guard length == nameLength + 3, index + 10 + nameLength <= body.count else { return nil }
+            let name = String(
+                decoding: body[(index + 10)..<(index + 10 + nameLength)], as: UTF8.self)
+            // The vendor skips an all-zero address: it is a placeholder slot, not a device.
+            if address != "00:00:00:00:00:00" {
+                devices.append(LinkedDevice(
+                    address: address,
+                    name: name,
+                    state: ConnectionState(rawValue: Int(state)),
+                    isCurrentDevice: flags & 0x01 != 0,
+                    isMainAudioDevice: flags & 0x02 != 0,
+                    isAudioActive: flags & 0x04 != 0,
+                    deviceType: DeviceType(rawValue: Int(flags >> 3) & 0x07)))
+            }
+            index += 7 + length
+        }
+        return devices
     }
 
     /// Family 2: `type 0x05`, with the command byte naming the subject on its own numbering.
@@ -1170,12 +1283,50 @@ enum BudsProtocol {
 
         // MARK: Frames that must not move anything
 
-        // The only family-1 notification this unit sends unprompted is the device table — a
-        // topic this app does not model. It must be recognised as a notification and then
-        // ignored, not mistaken for a setting.
+        // The device table is the one family-1 notification this unit sends unprompted, and
+        // topic `0x06` is the multi-connect table. Its layout is the vendor SDK's own parser,
+        // and this capture is what holds that parser to account: read under it, the second
+        // record begins at byte 35 of the 55-byte body and ends exactly at the end, which a
+        // wrong stride would not do.
+        func table(of frame: Frame) -> [LinkedDevice]? {
+            for update in interpret(frame) {
+                if case .linkedDevices(let devices) = update { return devices }
+            }
+            return nil
+        }
+
         let devices = capture("notify-devices")
         check(devices.isStatusNotification, "a 0x0204 frame is a status notification")
-        check(interpret(devices).isEmpty, "an unmodelled topic yields no update")
+        let table = table(of: devices) ?? []
+        check(table.count == 2, "the device table names two devices")
+        check(table.first?.name == "Shashank’s MacBook Pro", "the first device's name")
+        check(table.first?.address == "26:68:69:83:be:b0", "and its address, byte for byte")
+        check(table.first?.state == .connected, "the Mac reads connected")
+        check(table.first?.isCurrentDevice == true, "and is the device the buds talk to")
+        check(table.first?.isMainAudioDevice == false && table.first?.isAudioActive == false,
+              "with no audio flag set")
+        check(table.first?.deviceType == nil, "its device-type bits are unset in this capture")
+        check(table.dropFirst().first?.name == "shsxnk S23", "the second device's name")
+        check(table.dropFirst().first?.state == .notConnected, "the phone reads not connected")
+        check(table.dropFirst().first?.isCurrentDevice == false, "and is not this Mac")
+
+        // A table that does not add up is no table: a record running past the body, a length
+        // byte that disagrees with the name it precedes, and a count promising more records
+        // than the body holds all yield nil — so a half-read list cannot reach the UI as a fact.
+        let tableBody = Array(devices.payload.dropFirst())
+        check(linkedDevices(Array(tableBody.dropLast(4))) == nil, "a truncated record is no table")
+        var mismatched = tableBody
+        mismatched[7] = 0x1c
+        check(linkedDevices(mismatched) == nil, "a length byte that disagrees is no table")
+        check(linkedDevices([0x02]) == nil, "a count with no records is no table")
+        check(linkedDevices([0x03] + tableBody) == nil, "a count past the body is no table")
+        check(linkedDevices([]) == nil, "a body with no count is no table")
+        check(linkedDevices([0x00]) == [], "a zero count is an empty table, not a failure")
+        // An all-zero address is a placeholder slot: the vendor's parser skips it rather than
+        // listing a device that has no address.
+        var zeroed = tableBody
+        for index in 1...6 { zeroed[index] = 0x00 }
+        check(linkedDevices(zeroed)?.count == 1, "a placeholder address is skipped")
 
         for name in ["setack-anc", "setack-eq", "setack-basswave"] {
             check(interpret(capture(name)).isEmpty, "\(name) is never a status update")

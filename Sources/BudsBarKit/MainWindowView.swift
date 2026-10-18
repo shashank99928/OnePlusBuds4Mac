@@ -90,6 +90,9 @@ struct MainColumn: View {
                 SoundSection(buds: buds)
                 FindMyEarbudsSection(buds: buds)
                 EarbudControlsSection(buds: buds)
+                // The buds' own account of what is linked to them sits with the other
+                // read-only facts, immediately above the About rows.
+                LinkedDevicesSection(buds: buds)
                 DeviceDetailsSection(buds: buds)
             } else {
                 BudsDisconnectedNote(buds: buds)

@@ -1019,6 +1019,88 @@ struct GestureRow: View {
 // MARK: - About
 
 /// Read-only facts about the buds themselves, as the phone's "About" screen shows them.
+/// The phone app's "Dual connection" screen, as far as this platform can honestly take it: the
+/// buds push the table of what is linked to them, and nothing here changes it. No setter for
+/// connecting or disconnecting a peer has ever been seen on the wire, so the list is a reading —
+/// the same treatment the About rows get — rather than buttons that would have to guess.
+///
+/// The row layout is the vendor SDK's own multi-connect record (six address bytes, a length
+/// byte, a state byte, a flag byte, a length-prefixed name) rather than a fit to the one sample
+/// this app has: read under it, that sample's two records end exactly on the body's last byte.
+/// The sentence above the rows says "reports" because that is what a push is — the buds' account
+/// of the link, not the Mac's.
+struct LinkedDevicesSection: View {
+    @Bindable var buds: Buds
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Linked devices")
+                .font(.system(size: 15, weight: .semibold))
+
+            Text("What the earbuds report as linked to them.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.secondary)
+
+            if buds.linkedDevices.isEmpty {
+                // True of both ways the list can be empty: a push that has not arrived, and a
+                // push that named no devices. "Waiting…" would be untrue in the second case.
+                ControlsNotReady(text: "No linked devices reported.")
+            }
+
+            ForEach(buds.linkedDevices, id: \.address) { device in
+                row(device)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard(cornerRadius: 16)
+    }
+
+    private func row(_ device: BudsProtocol.LinkedDevice) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            // A device type the buds did not set draws the generic glyph rather than a laptop:
+            // the type is the vendors' to state, and this capture's two entries state nothing.
+            Image(systemName: device.deviceType?.symbol ?? "dot.radiowaves.left.and.right")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                // A bud can report a device it has no name for. The address is what it has
+                // instead, and an empty row would read as a device that is not there.
+                Text(device.name.isEmpty ? device.address : device.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(caption(device))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Says which entry is this Mac and what the buds say it is doing, and says nothing at all
+    /// about a state byte the vendor numbering does not name.
+    private func caption(_ device: BudsProtocol.LinkedDevice) -> String {
+        var parts: [String] = []
+        if device.isCurrentDevice { parts.append("this Mac") }
+        switch device.state {
+        case .connected?: parts.append("connected")
+        case .connecting?: parts.append("connecting")
+        case .disconnecting?: parts.append("disconnecting")
+        case .notConnected?: parts.append("not connected")
+        case nil: break
+        }
+        if device.isAudioActive { parts.append("playing audio") }
+        else if device.isMainAudioDevice { parts.append("main audio") }
+        return parts.joined(separator: " · ")
+    }
+}
+
 struct DeviceDetailsSection: View {
     @Bindable var buds: Buds
 

@@ -65,6 +65,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     var isControlChannelOpen = false
     var battery = Battery()
     var placement = Placement()
+    /// The buds' multi-connect table, as last pushed. Empty means the buds said there are no
+    /// linked devices — a table this app could not read back produces no update at all, so an
+    /// empty array is never a parse failure wearing the clothes of a fact.
+    var linkedDevices: [BudsProtocol.LinkedDevice] = []
     var mode: NoiseMode?
     /// How hard cancellation is working. Carried in the same mask as the mode, so it is
     /// always known while Noise cancellation is on.
@@ -552,6 +556,9 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
         } else {
             battery = Battery()
             placement = Placement()
+            // The table describes this link, so it goes with the link — otherwise a Mac and a
+            // phone stay listed as linked to buds nothing is talking to.
+            linkedDevices = []
             mode = nil
             ancLevel = nil
             eqPreset = nil
@@ -1005,6 +1012,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     private func apply(_ update: BudsProtocol.Update) {
         switch update {
+        case .linkedDevices(let devices):
+            guard linkedDevices != devices else { break }
+            decodeLog("LINKED DEVICES \(devices.map(\.name))")
+            linkedDevices = devices
         case .eqPreset(let value):
             eqPreset = value
         case .bassWave(let value):
