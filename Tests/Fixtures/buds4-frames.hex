@@ -74,6 +74,17 @@ setack-eq = aa 08 00 00 06 84 12 01 00 00
 # 0x1b84: BassWave setter -- not the getter's 0x24
 setack-basswave = aa 08 00 00 1b 84 14 01 00 00
 
-# 0x0204 topic 0x06: connected-device table, a topic this app does not model
+# 0x0204 topic 0x06: the multi-connect table -- [count], then records of
+# [address 6][length][state][flags][nameLength][name]. The layout is the vendor
+# SDK's own multi-connect parser; read under it, this frame's two records end
+# exactly on its last byte, which is what makes the stride more than a fit to one
+# sample. The phone's state byte is 00 here: it was not connected at the time.
 notify-devices = aa 3f 00 00 04 02 25 38 00 06 02 26 68 69 83 be b0 1b 02 01 18 53 68 61 73 68 61 6e 6b e2 80 99 73 20 4d 61 63 42 6f 6f 6b 20 50 72 6f 6f af 4d 25 a8 b8 0d 00 00 0a 73 68 73 78 6e 6b 20 53 32 33
+
+# 0x8112: the multi-connect table read back on request -- the same body the 0x0204
+# push carries, behind a status byte, and the reply echoes the request's sequence
+# (0x32). The getter is `0x12` with an empty payload, exactly as the vendor SDK
+# sends it. The phone's state byte is 02 here: it had connected, and that one byte
+# is the whole difference from `notify-devices`.
+multiconnect-reply = aa 3f 00 00 12 81 32 38 00 00 02 26 68 69 83 be b0 1b 02 01 18 53 68 61 73 68 61 6e 6b e2 80 99 73 20 4d 61 63 42 6f 6f 6b 20 50 72 6f 6f af 4d 25 a8 b8 0d 02 00 0a 73 68 73 78 6e 6b 20 53 32 33
 

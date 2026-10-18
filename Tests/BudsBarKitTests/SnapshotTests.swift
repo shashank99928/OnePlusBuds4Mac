@@ -144,13 +144,15 @@ final class SnapshotTests: XCTestCase {
 
             ComponentGolden(
                 name: "linked-devices",
-                state: "the corpus's multi-connect push replayed: this Mac, marked as the "
-                     + "device the buds are talking to and connected, with the phone beside it",
+                state: "the corpus's device table read back on request: this Mac, marked as "
+                     + "the device the buds are talking to and connected, the phone beside it "
+                     + "connected too",
                 width: 470
             ) { [self] in
-                let buds = seeded(.connected)
-                ingest("notify-devices", into: buds)
-                return onDarkSurface(LinkedDevicesSection(buds: buds), padding: 22)
+                // No `ingest` here: the seeded state replays the whole corpus in file order, and
+                // the table's last word in it is the getter's reply — the same frame the window
+                // golden is drawn from, so the card and the window say the same thing.
+                onDarkSurface(LinkedDevicesSection(buds: seeded(.connected)), padding: 22)
             },
 
             ComponentGolden(

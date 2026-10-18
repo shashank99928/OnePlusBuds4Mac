@@ -954,6 +954,12 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             BudsProtocol.encodeRequest(.anc, payload: [0x01, 0x01]),
             BudsProtocol.encodeRequest(.battery),
             BudsProtocol.encodeRequest(.wear),
+            // The linked-device table is pushed too, but not reliably at the moment it changes:
+            // in this project's own capture set a push and a getter reply a second apart
+            // disagreed about the phone's state. The getter is one empty-payload frame and its
+            // reply is the push's body behind a status byte, so the poll is what keeps the card
+            // honest about which device is connected right now.
+            BudsProtocol.encodeRequest(.connectedDevices),
         ] { send(packet) }
     }
 

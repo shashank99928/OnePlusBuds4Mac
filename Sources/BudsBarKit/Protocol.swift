@@ -696,6 +696,11 @@ enum BudsProtocol {
             return wear(body(withoutStatus: frame))
         case Command.anc.rawValue:
             return anc(body(withoutStatus: frame))
+        // The table, read back on request. The reply is the push's body behind a status byte,
+        // which is why the same decoder serves it — and why the card can be current rather than
+        // only as fresh as the last push.
+        case Command.connectedDevices.rawValue:
+            return linkedDevices(body(withoutStatus: frame)).map { [.linkedDevices($0)] } ?? []
         case Command.eqPreset.rawValue:
             guard let value = body(withoutStatus: frame).first,
                   let preset = EQPreset(value: value) else { return [] }
@@ -1288,8 +1293,8 @@ enum BudsProtocol {
         // and this capture is what holds that parser to account: read under it, the second
         // record begins at byte 35 of the 55-byte body and ends exactly at the end, which a
         // wrong stride would not do.
-        func table(of frame: Frame) -> [LinkedDevice]? {
-            for update in interpret(frame) {
+        func decodedTable(of frame: Frame) -> [LinkedDevice]? {
+            for update in interpret(frame) + decode(reply: frame) {
                 if case .linkedDevices(let devices) = update { return devices }
             }
             return nil
@@ -1297,7 +1302,7 @@ enum BudsProtocol {
 
         let devices = capture("notify-devices")
         check(devices.isStatusNotification, "a 0x0204 frame is a status notification")
-        let table = table(of: devices) ?? []
+        let table = decodedTable(of: devices) ?? []
         check(table.count == 2, "the device table names two devices")
         check(table.first?.name == "Shashank’s MacBook Pro", "the first device's name")
         check(table.first?.address == "26:68:69:83:be:b0", "and its address, byte for byte")
@@ -1310,10 +1315,35 @@ enum BudsProtocol {
         check(table.dropFirst().first?.state == .notConnected, "the phone reads not connected")
         check(table.dropFirst().first?.isCurrentDevice == false, "and is not this Mac")
 
+        // And the same table read back on request. The reply is the push's body behind a status
+        // byte, so one decoder serves both — and the two captures are what prove it: they line
+        // up byte for byte apart from that status byte and the phone's state, which had moved
+        // from not connected to connected in between. Any other difference would mean one of
+        // them had not been read right.
+        let reply = capture("multiconnect-reply")
+        let readBack = decodedTable(of: reply) ?? []
+        check(readBack.count == 2, "the getter's reply names the same two devices")
+        check(readBack.map(\.name) == table.map(\.name), "with the same names")
+        check(readBack.dropFirst().first?.state == .connected,
+              "and the phone connected, which is the byte the push predates")
+        check(decode(reply: reply) == [.linkedDevices(readBack)], "a reply decodes as an update")
+        check(interpret(reply).isEmpty, "a reply is not a notification")
+
+        let replyBody = Array(reply.payload.dropFirst())
+        let tableBody = Array(devices.payload.dropFirst())
+        if replyBody.count == tableBody.count, tableBody.count > 42 {
+            check(tableBody[42] == 0x00, "the push's phone state byte is 0")
+            check(replyBody[42] == 0x02, "the reply's is 2")
+            var aligned = tableBody
+            aligned[42] = 0x02
+            check(aligned == replyBody, "and every other byte of the two bodies is identical")
+        } else {
+            check(false, "the two device-table captures carry bodies of equal length")
+        }
+
         // A table that does not add up is no table: a record running past the body, a length
         // byte that disagrees with the name it precedes, and a count promising more records
         // than the body holds all yield nil — so a half-read list cannot reach the UI as a fact.
-        let tableBody = Array(devices.payload.dropFirst())
         check(linkedDevices(Array(tableBody.dropLast(4))) == nil, "a truncated record is no table")
         var mismatched = tableBody
         mismatched[7] = 0x1c

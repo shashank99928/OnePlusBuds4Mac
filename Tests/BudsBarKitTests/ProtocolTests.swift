@@ -192,6 +192,29 @@ final class ProtocolTests: XCTestCase {
         XCTAssertNil(BudsProtocol.linkedDevices(Array(body.dropLast(4))), "a truncated record")
         XCTAssertNil(BudsProtocol.linkedDevices([0x03] + body), "a count past the body")
         XCTAssertEqual(BudsProtocol.linkedDevices([0x00]), [], "a zero count is an empty table")
+
+        // The same table read back on request. The reply is the push's body behind a status
+        // byte, so the same decoder serves it, and this is the capture that proves the getter
+        // works: the request is `0x12` with an empty payload, exactly as the vendor SDK sends it.
+        let replyCapture = try XCTUnwrap(
+            FixtureCorpus.frames.first { $0.name == "multiconnect-reply" },
+            "the getter's reply is missing from the corpus")
+        var replyBytes = replyCapture.bytes
+        let replyFrame = try XCTUnwrap(BudsProtocol.drainFrames(from: &replyBytes).first)
+        XCTAssertTrue(replyBytes.isEmpty, "the reply capture is more than the one frame")
+
+        guard case .linkedDevices(let readBack)? = BudsProtocol.decode(reply: replyFrame).first else {
+            return XCTFail("the getter's reply did not decode to a device table")
+        }
+        XCTAssertEqual(readBack.map(\.name), table.map(\.name))
+        XCTAssertEqual(readBack.dropFirst().first?.state, .connected,
+                       "the phone had connected by the time of the reply")
+        XCTAssertEqual(replyFrame.payload.first, 0x00, "the reply's status byte leads the body")
+        // The two captures differ in exactly two bytes — the reply's status byte and the phone's
+        // state — which is what makes them two frames rather than two readings of one moment.
+        var aligned = body
+        aligned[42] = 0x02
+        XCTAssertEqual(aligned, Array(replyFrame.payload.dropFirst()))
     }
 
     /// Every mask the UI can offer has to decode back to the mode it came from, and no two
