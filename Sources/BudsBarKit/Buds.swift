@@ -87,6 +87,8 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
     var bassWave: Int?
     /// Firmware string, e.g. `1,2,138,2,2,138,3,1,01,3,2,105`.
     var firmware: String?
+    /// The codec the link is using, from the `0x0114` getter. Read-only; nil until answered.
+    var codec: BudsProtocol.Codec?
     /// The touch-gesture table, as read back. Written one record at a time.
     var touchRules: [BudsProtocol.TouchRule] = []
     /// Set while a connect/disconnect is in flight so the toggle can't be double-fired.
@@ -569,6 +571,8 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             // disconnected panel (or one wearing a different device's name) keeps showing the
             // version of buds it is no longer talking to.
             firmware = nil
+            // Same for the codec: it describes this link's negotiation and nothing else.
+            codec = nil
         }
     }
 
@@ -960,6 +964,9 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             // reply is the push's body behind a status byte, so the poll is what keeps the card
             // honest about which device is connected right now.
             BudsProtocol.encodeRequest(.connectedDevices),
+            // The codec belongs to the link, not to a settings screen: it can change when the
+            // audio renegotiates, so it is polled with the state rather than read once.
+            BudsProtocol.encodeRequest(.codec),
         ] { send(packet) }
     }
 
@@ -1026,6 +1033,10 @@ final class Buds: NSObject, IOBluetoothRFCOMMChannelDelegate {
             eqPreset = value
         case .bassWave(let value):
             bassWave = value
+        case .codec(let value):
+            guard codec != value else { break }
+            decodeLog("CODEC \(value.label)")
+            codec = value
         case .noiseMode(let value):
             if mode != value {
                 decodeLog("MODE reported \(value.label) 0x\(String(format: "%04x", value.mask))")

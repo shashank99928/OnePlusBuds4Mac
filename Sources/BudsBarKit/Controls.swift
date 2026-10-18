@@ -1110,6 +1110,7 @@ struct DeviceDetailsSection: View {
                 .font(.system(size: 15, weight: .semibold))
 
             row("Firmware", buds.firmware ?? "—", monospaced: true)
+            row("Codec", buds.codec?.label ?? "—")
             row("Custom EQ profile",
                 buds.hasCustomEQProfile.map { $0 ? "Saved" : "None" } ?? "—")
         }

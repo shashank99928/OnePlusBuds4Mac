@@ -210,6 +210,45 @@ enum BudsProtocol {
         case customEQ = 0x22
         case bassWave = 0x24
         case capabilities = 0x2f
+        /// `getCurrentCodecType` in the vendor SDK's own command labels.
+        case codec = 0x14
+    }
+
+    /// The codec the link is using, from the `0x0114` getter.
+    ///
+    /// The ids and their names are the vendor SDK's: its "High audio" list is built from the
+    /// same numbering and highlights the entry equal to the reported type (`CodecVO.kt`), so a
+    /// name here is their label rather than an inference from the audio. On this hardware the
+    /// getter answers `02`, which their list calls AAC — the app cannot see macOS's side of the
+    /// negotiation, so what it shows is the buds' own word for the link.
+    ///
+    /// Read-only, deliberately: the setter for it (`setHighAudioCodecType`, `0x041a`) is one of
+    /// the commands the vendor's SDK logs as unsupported, so nothing here sends it. An id the
+    /// table does not name parses to nothing and the row reads as unknown, rather than being
+    /// rounded to a codec the hardware never reported.
+    enum Codec: UInt8 {
+        case sbc = 0x01
+        case aac = 0x02
+        case ldac = 0x03
+        case aptx = 0x04
+        case aptxHD = 0x05
+        case aptxAdaptive = 0x06
+        case lhdc = 0x07
+        case lhdcV5 = 0x08
+
+        var label: String {
+            switch self {
+            case .sbc: return "SBC"
+            case .aac: return "AAC"
+            case .ldac: return "LDAC"
+            // The vendor's own strings, underscores and all: they are what its list renders,
+            // and `aptX` is a trademark whose case is theirs to set.
+            case .aptx: return "APTX"
+            case .aptxHD: return "APTX_HD"
+            case .aptxAdaptive: return "APTX_ADAPTIVE"
+            case .lhdc, .lhdcV5: return "LHDC"
+            }
+        }
     }
 
     /// Setter command ids. A **different namespace**, confirmed against the hardware: the EQ
@@ -273,6 +312,9 @@ enum BudsProtocol {
         /// empty table: `linkedDevices(_:)` returns nil for one it cannot trust and the frame
         /// then yields no update at all, so a bad parse cannot silently clear the list.
         case linkedDevices([LinkedDevice])
+        /// The codec the link negotiated. Read-only: the vendor's own setter for it
+        /// (`setHighAudioCodecType`) is one of the commands its SDK logs as unsupported.
+        case codec(Codec)
     }
 
     enum BatterySlot: UInt8 {
@@ -714,6 +756,10 @@ enum BudsProtocol {
         case Command.bassWave.rawValue:
             guard let level = bassWaveLevel(body(withoutStatus: frame)) else { return [] }
             return [.bassWave(level)]
+        case Command.codec.rawValue:
+            guard let id = body(withoutStatus: frame).first,
+                  let codec = Codec(rawValue: id) else { return [] }
+            return [.codec(codec)]
         default:
             return []
         }
@@ -724,7 +770,8 @@ enum BudsProtocol {
     static func firmware(from frame: Frame) -> String? {
         guard frame.cmd == Command.firmware.rawValue,
               frame.messageType == MessageType.reply.rawValue,
-              frame.payload.count >= 2 else { return nil }
+              frame.payload.count >= 2,
+              frame.payload[0] == statusOK else { return nil }
         return String(decoding: frame.payload.dropFirst(2), as: UTF8.self)
     }
 
@@ -752,8 +799,19 @@ enum BudsProtocol {
         return Int(Int8(bitPattern: body[2]))
     }
 
+    /// The status byte a reply leads with, and the only value a decoder here will read past.
+    ///
+    /// `00` is a reply that carries an answer; `01` is the firmware declining the command.
+    /// Both were measured: every getter this app sends answers `00`, and six of the getters the
+    /// vendor's SDK names — hearing enhancement, its filter data, Zen mode, free-dialog recovery
+    /// time (`0x0115`, `0x0116`, `0x0119`, `0x011d`) — answer a bare `01` instead of a body.
+    /// Reading past the status would take `[01 03]` for three records, so a declined reply
+    /// yields no update at all rather than a guess at what its leftovers meant.
+    static let statusOK: UInt8 = 0x00
+
     private static func body(withoutStatus frame: Frame) -> [UInt8] {
-        Array(frame.payload.dropFirst())
+        guard frame.payload.first == statusOK else { return [] }
+        return Array(frame.payload.dropFirst())
     }
 
     /// Family 1: `cmd 0x04`, `type 0x02`. `payload[0]` selects the topic and the rest is the
@@ -1077,6 +1135,27 @@ enum BudsProtocol {
                   "\(label): the parser resynchronises instead of stalling")
         }
 
+        // MARK: The status byte
+
+        // Every reply this app sends leads with a status byte, and both of its values have now
+        // been seen. `00` is an answer. `01` is the firmware declining the command — measured
+        // while asking the getters the vendor's SDK names: `0x0115` and `0x0116` (hearing
+        // enhancement), `0x0119` (Zen mode) and `0x011d` (free-dialog recovery) answer a bare
+        // `01` where `0x0106` answers a battery. So a decoder may only read past a `00`, and
+        // this is the suite-wide version of that: nothing in the corpus is a declined reply.
+        for (name, frame) in captured where frame.messageType == MessageType.reply.rawValue {
+            check(frame.payload.first == statusOK,
+                  "\(name): a captured reply does not lead with the OK status byte")
+        }
+        let declined = derived("anc-reply-declined", from: capture("anc-reply-off"),
+                               payload: [0x01, 0x03])
+        check(decode(reply: declined).isEmpty,
+              "a declined reply yields no update rather than three records")
+        let declinedFirmware = derived("firmware-reply-declined", from: capture("firmware-reply"),
+                                       payload: [0x01, 0x04, 0x31])
+        check(firmware(from: declinedFirmware) == nil,
+              "a declined firmware read is not a version string")
+
         // MARK: Handshake
 
         let hello = capture("hello-reply")
@@ -1213,6 +1292,23 @@ enum BudsProtocol {
         let bass2 = capture("basswave-reply-2")
         check(decode(reply: bass0) == [.bassWave(0)], "a signed BassWave level")
         check(decode(reply: bass2) == [.bassWave(2)], "and another")
+
+        // The codec, read with an empty payload from `0x0114`. Its id space is the vendor's
+        // own list (`CodecVO.kt` numbers the "High audio" entries the same way), so the check
+        // that every id it names is in this table is what keeps the labels theirs: an id the
+        // table does not name is no update rather than a guess.
+        check(decode(reply: capture("codec-reply")) == [.codec(.aac)],
+              "the codec readback is AAC: \(decode(reply: capture("codec-reply")))")
+        check((1...8).allSatisfy { Codec(rawValue: UInt8($0)) != nil },
+              "every codec id the vendor's list carries has a name here")
+        check(Codec(rawValue: 0x09) == nil, "an id the vendor's list does not carry is unnamed")
+        let unnamedCodec = derived("codec-reply-unnamed", from: capture("codec-reply"),
+                                   payload: [0x00, 0x09])
+        check(decode(reply: unnamedCodec).isEmpty,
+              "an unnamed codec id yields no update rather than a near match")
+        let declinedCodec = derived("codec-reply-declined", from: capture("codec-reply"),
+                                    payload: [0x01, 0x02])
+        check(decode(reply: declinedCodec).isEmpty, "a declined codec read is not a codec")
 
         // Not observed on this unit — the phone's own writes are what raise it — so it is
         // derived from the family-2 shape with subject 0x08, whose payload is the 0x041B

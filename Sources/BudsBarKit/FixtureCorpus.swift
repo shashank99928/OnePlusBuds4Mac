@@ -98,5 +98,8 @@ public enum FixtureCorpus {
         Capture(name: "multiconnect-reply",
                 note: "0x8112: the multi-connect table read back on request -- the same body the 0x0204 push carries, behind a status byte, and the reply echoes the request's sequence (0x32). The getter is `0x12` with an empty payload, exactly as the vendor SDK sends it. The phone's state byte is 02 here: it had connected, and that one byte is the whole difference from `notify-devices`.",
                 hex: "aa 3f 00 00 12 81 32 38 00 00 02 26 68 69 83 be b0 1b 02 01 18 53 68 61 73 68 61 6e 6b e2 80 99 73 20 4d 61 63 42 6f 6f 6b 20 50 72 6f 6f af 4d 25 a8 b8 0d 02 00 0a 73 68 73 78 6e 6b 20 53 32 33"),
+        Capture(name: "codec-reply",
+                note: "0x8114: the codec the link is using, read back with an empty payload. The id is read against the vendor SDK's own table (`CodecVO.kt` builds the 'High audio' list from the same numbering and highlights the entry equal to the reported type): 02 is AAC by that table. The getter is one of the ids the SDK's log labels name -- `getCurrentCodecType`, SDK command 276 -- and of the twenty-odd getters tried, this one answered where spatial type, game sound, tap level and the spine features stay silent.",
+                hex: "aa 09 00 00 14 81 42 02 00 00 02"),
     ]
 }

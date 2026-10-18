@@ -146,6 +146,50 @@ final class ProtocolTests: XCTestCase {
     /// second record lands on byte 35 of the 55-byte body and the pair consumes the body
     /// *exactly*, with nothing left over and nothing missing. A stride that was one byte out
     /// would not do that.
+    /// The codec getter, end to end, against the capture: the reply's second byte is an id in
+    /// the vendor's own codec list, and the app names it the way that list does.
+    func testTheCodecGetterNamesTheIdTheVendorNames() throws {
+        let capture = try XCTUnwrap(
+            FixtureCorpus.frames.first { $0.name == "codec-reply" },
+            "the codec capture is missing from the corpus")
+        var bytes = capture.bytes
+        let frame = try XCTUnwrap(BudsProtocol.drainFrames(from: &bytes).first,
+                                  "the codec capture did not parse")
+        XCTAssertTrue(bytes.isEmpty, "the capture is more than the one frame")
+        XCTAssertEqual(frame.cmd, BudsProtocol.Command.codec.rawValue)
+
+        XCTAssertEqual(BudsProtocol.decode(reply: frame), [.codec(.aac)],
+                       "the capture's id 02 should read as AAC")
+        XCTAssertEqual(BudsProtocol.Codec(rawValue: 0x02)?.label, "AAC")
+        XCTAssertEqual(BudsProtocol.Codec(rawValue: 0x01)?.label, "SBC")
+        XCTAssertEqual(BudsProtocol.Codec(rawValue: 0x03)?.label, "LDAC")
+        // The two LHDC entries the vendor's list carries are labelled alike there, so they are
+        // labelled alike here rather than being told apart by a guess at which revision.
+        XCTAssertEqual(BudsProtocol.Codec(rawValue: 0x07)?.label, "LHDC")
+        XCTAssertEqual(BudsProtocol.Codec(rawValue: 0x08)?.label, "LHDC")
+        XCTAssertNil(BudsProtocol.Codec(rawValue: 0x00), "0 is not a codec in the vendor's list")
+        XCTAssertNil(BudsProtocol.Codec(rawValue: 0x09))
+    }
+
+    /// The status byte: a reply only decodes past a `00`. This is not hypothetical — six of the
+    /// getters the vendor's SDK names answer a bare `01` on this hardware, so a decoder that
+    /// skimmed the byte off would read `[01 03]` as a counted table of three records.
+    func testADeclinedReplyDecodesToNothing() throws {
+        let capture = try XCTUnwrap(
+            FixtureCorpus.frames.first { $0.name == "anc-reply-off" },
+            "the ANC capture is missing from the corpus")
+        var bytes = capture.bytes
+        let frame = try XCTUnwrap(BudsProtocol.drainFrames(from: &bytes).first)
+
+        XCTAssertEqual(BudsProtocol.decode(reply: frame), [.noiseMode(.off)],
+                       "the OK status byte is 00 and the answer follows it")
+        let declined = BudsProtocol.Frame(cmd: frame.cmd, messageType: frame.messageType,
+                                          sequence: frame.sequence, payload: [0x01, 0x03],
+                                          raw: frame.raw)
+        XCTAssertTrue(BudsProtocol.decode(reply: declined).isEmpty,
+                      "a declined reply must not be read as a three-record body")
+    }
+
     func testTheDeviceTableDecodesToWhatTheCaptureRecords() throws {
         let capture = try XCTUnwrap(
             FixtureCorpus.frames.first { $0.name == "notify-devices" },

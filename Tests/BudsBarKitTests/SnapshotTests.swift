@@ -77,6 +77,7 @@ final class SnapshotTests: XCTestCase {
         XCTAssertNotNil(buds.eqPreset, "the capture has an EQ readback")
         XCTAssertNotNil(buds.bassWave, "the capture has a BassWave readback")
         XCTAssertNotNil(buds.firmware, "the capture has the firmware string")
+        XCTAssertEqual(buds.codec, .aac, "the capture has the codec readback")
         XCTAssertEqual(buds.touchRules.count, 18, "the capture has the gesture table")
     }
 
@@ -140,6 +141,17 @@ final class SnapshotTests: XCTestCase {
             ) { [self] in
                 // The warming-up window: connected, control channel not open, nothing read.
                 onDarkSurface(DeviceDetailsSection(buds: seeded(.warmingUp)), padding: 22)
+            },
+
+            ComponentGolden(
+                name: "device-details-read",
+                state: "everything the card carries, read back: the firmware string, the codec "
+                     + "the link negotiated, and no custom EQ profile saved",
+                width: 470
+            ) { [self] in
+                // The seeded state replays the whole corpus, so the firmware, the codec and the
+                // custom-EQ answer are the captured ones rather than set here.
+                onDarkSurface(DeviceDetailsSection(buds: seeded(.connected)), padding: 22)
             },
 
             ComponentGolden(
@@ -396,6 +408,7 @@ final class SnapshotTests: XCTestCase {
         XCTAssertTrue(warming.isConnected)
         XCTAssertFalse(warming.isControlChannelOpen)
         XCTAssertNil(warming.firmware, "the firmware-unknown golden has a firmware")
+        XCTAssertNil(warming.codec, "the firmware-unknown golden has a codec read")
 
         let paired = seeded(.disconnected)
         XCTAssertTrue(paired.isPaired)
@@ -412,6 +425,17 @@ final class SnapshotTests: XCTestCase {
         XCTAssertFalse(closed.isControlChannelOpen)
         XCTAssertNotNil(closed.battery.left, "no reading held, so the reconnect wording is wrong")
         XCTAssertNotNil(closed.mode)
+        XCTAssertEqual(closed.codec, .aac,
+                       "the codec is held with the other readings while the channel reconnects")
+        XCTAssertNil(seeded(.disconnected).codec, "a disconnected pair shows no codec")
+
+        // The populated About card: every row it carries has to have been read, or the golden
+        // is pinning dashes and claiming they are readings.
+        let details = seeded(.connected)
+        XCTAssertNotNil(details.firmware, "the device-details-read golden has no firmware")
+        XCTAssertEqual(details.codec, .aac, "the device-details-read golden has no codec")
+        XCTAssertEqual(details.hasCustomEQProfile, false,
+                       "the custom-EQ row should read a definite None, not a dash")
 
         // The popup's two branches: readings in, and the instant before they arrive.
         let popup = seeded(.connected)

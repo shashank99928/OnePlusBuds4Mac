@@ -46,6 +46,10 @@ readback against the hardware, not a display-only imitation.
   hold, slide) to what the buds actually support. Only the media context is remappable.
 - **Firmware readout** — the string the earbuds report, shown exactly as they report it: a
   comma-separated list, not decoded further — and whether a custom EQ profile is saved.
+- **Codec readout** — the codec the link negotiated, read from the buds rather than guessed
+  from the audio, and named with the vendor's own table. Read-only: the command that would
+  change it is one the vendor's SDK refuses to send itself. See
+  [How the phone app does it](#how-the-phone-app-does-it).
 - **Connect / disconnect** — power the buds from the app.
 - **Launch at login** — optional, so the app is already running when the buds connect.
 - **Two surfaces, one connection** — a full window and a compact menu-bar popover that
@@ -139,16 +143,16 @@ The app is `BudsBarKit`, a library, plus a four-line executable at
 `Sources/OnePlusBuds4/main.swift`. That split is what lets `swift test` reach the protocol and
 the views without launching the app.
 
-- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 154 checks, but the
+- **The buds' own readbacks.** `--selfcheck` exercises the wire format in 182 checks, but the
   hardware is the only thing that settles what a write did. Every mode and level was set and
   read back; when this app sent `0x02` for Transparency the firmware stored Noise cancellation,
   which is how that bug was found.
-- **A captured fixture corpus.** `Tests/Fixtures/buds4-frames.hex` holds 24 raw RFCOMM frames
+- **A captured fixture corpus.** `Tests/Fixtures/buds4-frames.hex` holds 25 raw RFCOMM frames
   taken off the wire, with both length fields intact. Fixtures are *captured*, never typed:
   the self-check used to crash at launch because one hand-written fixture's `len` varint
   disagreed with its own payload-length field, and the parser was right to reject it. Nothing
   enters the corpus except through `Tools/freeze-fixtures.sh` from a real capture.
-- **`swift test`.** 14 tests across two classes — 10 protocol tests and 4 snapshot tests. The
+- **`swift test`.** 16 tests across two classes — 12 protocol tests and 4 snapshot tests. The
   checks are tests, not a launch hook: the corpus invariant, the crash as a regression test,
   the setter ids against the acknowledgements the hardware sends, the property that every
   mode the UI can offer decodes back to itself, and the property that the self-check *reports*
@@ -212,6 +216,11 @@ Being explicit about the gaps, so nobody mistakes them for settled:
 - **Custom EQ is read-only.** The upload format has never been transmitted by anyone and there
   is no documented delete, so the app reports whether a custom profile exists and does not
   write the buds' flash.
+- **The codec row is read-only.** The id is read and named from the vendor's own table, but the
+  command that would change the codec (`setHighAudioCodecType`, `0x041a`) is one the vendor's own
+  SDK refuses to send, so nothing here offers a switch for it. What the row can say is what the
+  buds report; it cannot say what macOS believes the link is using, because macOS does not expose
+  that.
 - **Firmware updates** are out of scope entirely: the OTA path is a separate channel.
 - **The charging bit.** The top bit of a battery byte is treated as "charging" — seen on this
   hardware once, and named as a mask in the vendor SDK's own `BatteryInfo`
@@ -220,10 +229,13 @@ Being explicit about the gaps, so nobody mistakes them for settled:
 - **What a rejected write looks like.** A setter is answered with a `0x84` frame carrying the
   setter id and a sequence byte, and those acks are in the corpus. The vendor's parser reads the
   first payload byte as a status — `0` accepted, anything else declined — and every ack in the
-  corpus carries `0`, so that reading is plausible; but the find reply answers `1` to every
-  request, accepted or not, so the app still does not act on an ack. A write the buds decline is
-  not reported as an error; it appears as the control snapping back to the old value on the next
-  readback, a few seconds later.
+  corpus carries `0`. That reading is no longer only a guess at the acks: asking the getters the
+  vendor's SDK names turned up four of them (`0x0115`, `0x0116`, `0x0119`, `0x011d`) answering a
+  bare `01` where the app's own getters answer a body, so the reply path now requires a `00` and
+  ignores anything else — `[01 03]` is a refusal, not a count of three. The find reply still
+  answers `1` to every request, accepted or not, so the app does not *act* on an ack; a write the
+  buds decline is not reported as an error but shows up as the control snapping back to the old
+  value on the next readback, a few seconds later.
 - **Which reply wins.** Readbacks carry a sequence byte. It has been measured once — the
   multi-connect getter's three replies each echoed the request's sequence, `0x32`, `0x33`, `0x34`
   — but one getter is not all of them, so the app does not yet use the byte to discard stale
@@ -344,6 +356,37 @@ questions the captures could only hint at, and one thing no capture can show.
   flag their app reads from a config this one cannot see (`WhitelistConfigDTO.Function`). A code
   offered because the vendor's list has it, on a model whose config does not, is a menu entry that
   does nothing, so the app offers the codes this hardware has been seen to store.
+- **Their command ids come with names, and the names settle several of this app's.** The SDK
+  builds its unsupported-command log lines from a table that pairs an id with the method that
+  would have sent it, so `0x0106` is `m_bt_bat.getBatteryLevel`, `0x010c` is
+  `getCurrentNoiseReductionMode`, `0x0109` is `getEarBudsStatus`, `0x0105` is
+  `getRemoteVersion`, `0x0124` is `getBassEngineValue` against a setter of `0x041b`
+  (`setBassEngineValue`), `0x0400` is `setFindMode`, `0x0122` is `getAllEqInfo` — what this app
+  calls the custom EQ — and `0x0114` is `getCurrentCodecType`. Those are the ids this app reached
+  by capture, arriving at the same meanings from the other direction, which is the closest thing
+  to a second source the protocol has.
+- **Their codec list is a table, and it is where the new readout's labels come from.**
+  `CodecVO.kt` builds the "High audio" screen from the ids `1` SBC, `2` AAC, `3` LDAC, `4` APTX,
+  `5` APTX_HD, `6` APTX_ADAPTIVE and `7`/`8` LHDC, and highlights the entry equal to the
+  reported type — the same id space the `0x0114` reply carries. Asking this hardware for it
+  answered `02`, so the app says AAC, and it says it as a reading rather than as a guess about
+  the audio. The setter beside it (`setHighAudioCodecType`, `0x041a`) is one of the commands the
+  vendor's own SDK refuses to send, so the row is read-only and the UI offers no codec switch.
+- **Their screen is built from a config their server sends, and this hardware declines several
+  of its rows.** `WhitelistConfigDTO.Function` is a per-model feature flag set — `spatialTypes`,
+  `gameMode`, `whiteNoise`, `adaptiveEar`, `earScan`, `aiClearCall`, `tapLevelSetting`,
+  `spineLiveMonitor` and dozens more — fetched for the product id rather than read from the buds.
+  The commands behind those rows were asked about one at a time on this hardware, and they are
+  not there to be switched: `getHeadsetSpatialType`, `getGameSoundInfo`, `getTapLevelSettingValue`,
+  `getMultiConnectPriorityDevice` and both spine getters answer nothing at all, while
+  `getHearingEnhancementData` and its filter data, `getEarBudsZenModeInformation` and
+  `getFreeDialogRecoveryTime` answer a bare `01` — the status byte for a command the firmware
+  declines. That is the honest reason this app's window has fewer switches than the phone's: the
+  phone is drawing a list for the model, and this app can only offer what the model does.
+- **The status byte is an answer, not a formality.** A reply leads with `00` when it carries a
+  body and `01` when the firmware is declining — both values measured, the second on the four
+  getters above. So every decoder here only reads past a `00`: `[01 03]` is a refusal, not a
+  count of three, and a declined reply produces no update rather than a guess at its leftovers.
 - **The table is read-only because the wire says so.** Their screen can connect and disconnect a
   peer, but that goes through an app-side flow rather than a captured setter: no frame this
   project has seen names a multi-connect slot to change. So this app reports the table and offers
