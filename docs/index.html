@@ -318,7 +318,9 @@
           <h3><span class="tile-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="2"/><rect x="14" y="7" width="8" height="12" rx="2"/><path d="M6.5 17h.01"/></svg></span> Linked devices</h3>
           <p>
             What the earbuds report as linked to them: each device by name, which entry is this
-            Mac, and whether it is connected or carrying the audio.
+            Mac, and whether it is connected or carrying the audio. A reading, not a control —
+            their app can also connect and disconnect a peer, and the command behind that is
+            known, but no capture yet shows these earbuds accepting one.
           </p>
           <span class="tag">Phone · computer · tablet</span>
         </div>
@@ -560,7 +562,7 @@
         </li>
         <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-          <span><b>23 raw frames captured off the wire</b>, committed with both length fields intact. Fixtures are captured, never typed: the app used to crash at launch because one hand-written fixture disagreed with its own header.</span>
+          <span><b>25 raw frames captured off the wire</b>, committed with both length fields intact. Fixtures are captured, never typed: the app used to crash at launch because one hand-written fixture disagreed with its own header.</span>
         </li>
         <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
@@ -577,6 +579,14 @@
         <p class="u-fs-16">Stated plainly, so nobody mistakes these for settled:</p>
       </div>
       <ul class="checks">
+        <li class="check">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
+          <span><b>Making a linked device come and go.</b> The list is read, not written. The
+          vendor's command for it is known — <code>0x0429</code>, one byte of operation type
+          then the peer's address — but no capture shows these earbuds accepting one, and a
+          setter that works looks exactly like one the firmware ignores. So the app reports the
+          table and offers no buttons.</span>
+        </li>
         <li class="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg>
           <span><b>What the find-my-earbuds tone sounds like.</b> The command is sent and accepted; it was never confirmed by ear on both earbuds.</span>

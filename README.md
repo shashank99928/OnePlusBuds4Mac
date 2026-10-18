@@ -36,8 +36,10 @@ readback against the hardware, not a display-only imitation.
   are talking to (this Mac), and whether it carries the audio. The table is pushed and also
   asked for on the same cadence as the battery, so the card follows a phone joining or leaving
   rather than freezing at what the connect-time push said. Nothing here connects or disconnects a
-  peer — no setter for that has ever been seen on the wire — so the card is a fact rather than a
-  control.
+  peer. Their app can, and the command it uses is now known and named — but the write acts on
+  another device's link, so a frame sent without a capture to check it against could drop
+  somebody's audio, and the card stays a fact rather than a control. See
+  [What is not verified](#what-is-not-verified).
 - **Find my earbuds** — rings the left, the right, or both, and offers a Stop that asks the
   buds to end the tone. The stop is the vendor's own exit-find request, byte for byte: their app
   has the command but no control that reaches it, which is why a phone can only wait the tone
@@ -195,10 +197,18 @@ Being explicit about the gaps, so nobody mistakes them for settled:
 - **Dual connection.** The reading is closed; the writing is not. The buds push the table of
   what is linked to them and answer a request for it, and this app does both — the layout is the
   vendor SDK's own multi-connect parser, the push's records consume exactly to the last byte
-  under it, and the getter's reply is in the corpus as well. What remains unverified is the other
-  half: **no setter for connecting or disconnecting a peer has ever been seen on the wire**. The
-  card reports; it does not control. More captures close the writing half the way the reading
-  half was closed.
+  under it, and the getter's reply is in the corpus as well. The writing half is a smaller gap
+  than it was: the vendor SDK implements the setter and names it (`operateMultiConnectHandheldDevice`,
+  `0x0429`), and their own code shows the payload — one byte of operation type, `1` connect and `2`
+  disconnect, followed by the peer's six address bytes, or a two-byte `[4][0]` variant with no
+  address — and their screen calls it with those types. What is still missing is the one thing
+  that would let this app send it: **a capture of these buds accepting it**. On the wire a
+  setter that worked and a setter the firmware ignores look identical, since a request the
+  hardware declines is answered the same way, or not at all; and unlike a getter this write acts
+  on *another* device's link, so a frame sent to find out drops a phone's audio if it lands and
+  teaches nothing if it does not. That is why the card reports and does not control, and what
+  would change it: a capture of the phone sending `0x0429`, or a peer in the table to watch the
+  state change after this app sends one.
 - **The find-my-earbuds tone.** Ringing is answered with a bare result byte, and so is the stop.
   Five payload shapes — the vendor's `[0x01]` ring and `[0x00]` stop among them — were put on the
   wire one at a time, and every one came back `0x8400 len=1 payload=[01]`: the reply says nothing
@@ -387,10 +397,19 @@ questions the captures could only hint at, and one thing no capture can show.
   body and `01` when the firmware is declining — both values measured, the second on the four
   getters above. So every decoder here only reads past a `00`: `[01 03]` is a refusal, not a
   count of three, and a declined reply produces no update rather than a guess at its leftovers.
-- **The table is read-only because the wire says so.** Their screen can connect and disconnect a
-  peer, but that goes through an app-side flow rather than a captured setter: no frame this
-  project has seen names a multi-connect slot to change. So this app reports the table and offers
-  no buttons for it, the same line the app draws everywhere else.
+- **Their connect and disconnect buttons do have a command, and this is it.** `0x0429`,
+  `operateMultiConnectHandheldDevice` in the SDK's own command-name table, built in the set
+  command manager: the peer's address is split on its colons, the SDK refuses anything longer
+  than six bytes, and the payload is one byte of operation type followed by those six —
+  `[1][A0 A1 A2 A3 A4 A5]` to connect, `[2]…` to disconnect, with types `3` and a `[4][0]` /
+  `[4][1]…` pair unaccounted for in this build. Their list item is what passes them: the connect
+  row calls the repository with `1`, the disconnect confirmation with `2`, and the SDK gates the
+  call on the device's own support table before it sends. One asymmetry is worth naming, because
+  it is the part the app could not have guessed: when the peer being disconnected is *the device
+  the phone is running on*, that branch does not call this command at all — it calls the phone's
+  own Bluetooth path instead. The buds are being told about other devices; a device leaves on its
+  own. So this app reports the table and offers no buttons for it, the same line the app draws
+  everywhere else, and the README's not-verified entry says what would change that.
 
 ## Releasing
 
