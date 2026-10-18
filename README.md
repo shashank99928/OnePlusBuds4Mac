@@ -27,7 +27,8 @@ readback against the hardware, not a display-only imitation.
 - **Sound** — Sound Master EQ (Balanced / Clear Vocals / Bass, plus the Custom slot when the
   buds actually hold a profile) and **BassWave**, a −5…+5 bass emphasis.
 - **Battery** — per-earbud and case levels, with a headline reading for the weaker bud, and
-  an AirPods-style floating popup when the buds connect.
+  an AirPods-style floating popup when the buds connect. When the case hasn't reported a
+  charge, the app says so rather than leaving a number-shaped hole.
 - **In-ear detection** — each slot reports whether that bud is in use, resting in the case,
   or being held.
 - **Find my earbuds** — rings the left, the right, or both, and offers a Stop that asks the
@@ -226,6 +227,13 @@ reads from `0x24` — and a setter's payload is its getter's reply payload minus
 byte, which is why one set of decoders serves both. The community write-ups credited at the
 end of this file are what the format was cross-checked against; the captured corpus is what
 settled it, and `swift test` is what keeps it settled.
+
+One thing the corpus settled by repetition: **the battery reply carries left and right only.**
+Over a single session, 60 of 60 battery replies had a pair count of 2 while the wear reply named
+the case slot on every poll — so the case's charge is not something this channel sends while the
+buds are out of the case, whatever the phone app reads it from. The app still draws a case chip,
+because the wear report is real evidence that a case is there, but it labels that chip "Not
+reported" instead of leaving a dash that reads like a value still loading.
 
 ## Releasing
 

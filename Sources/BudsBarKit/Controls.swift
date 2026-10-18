@@ -215,6 +215,14 @@ struct BatteryChipsRow: View {
         buds.battery.left == nil && buds.battery.right == nil && !buds.isControlChannelOpen
     }
 
+    /// The case is known to be there, a bud has been read, and the case's own charge has still
+    /// not arrived — the steady state whenever the buds are out of it.
+    private var isCaseChargeUnreported: Bool {
+        buds.isCaseReported && buds.battery.enclosure == nil
+            && buds.isControlChannelOpen
+            && (buds.battery.left != nil || buds.battery.right != nil)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -235,6 +243,17 @@ struct BatteryChipsRow: View {
 
             if isWaitingForBattery {
                 ControlsNotReady(text: "Reading the battery…")
+            }
+
+            // The case names itself in the wear report but never in the battery report — 60 of
+            // 60 replies in one session carried left and right only — so its chip sits at a
+            // permanent dash. A dash means "no reading", which is true, but on its own it reads
+            // as a value that failed to load. One sentence says which unknown this is.
+            if isCaseChargeUnreported {
+                Text("The case hasn't reported its charge.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -284,9 +303,15 @@ struct DevicePill: View {
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.secondary)
-                Text(level.map { "\($0)%" } ?? "—")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                // A dash here read as a number that had not arrived yet. For the case it never
+                // arrives — the buds report left and right only — so the pill says which
+                // unknown this is instead of drawing a value-shaped hole.
+                Text(level.map { "\($0)%" } ?? "Not reported")
+                    .font(.system(size: level == nil ? 13 : 17,
+                                  weight: .semibold, design: .rounded))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
             }
             Spacer(minLength: 0)
         }
@@ -372,8 +397,14 @@ struct BatteryHero: View {
     private var accessibilityText: String {
         let lowest = weakest.map { "Lowest earbud battery \($0) percent" }
             ?? "Earbud battery unknown"
-        guard let enclosure = buds.battery.enclosure else { return lowest }
-        return "\(lowest). Case battery \(enclosure) percent"
+        if let enclosure = buds.battery.enclosure {
+            return "\(lowest). Case battery \(enclosure) percent"
+        }
+        // The pill says "Not reported" in this state, so the spoken summary says it too
+        // rather than dropping the case — a reader that hears only the buds cannot tell
+        // whether the case is absent or simply unread.
+        guard buds.isCaseReported else { return lowest }
+        return "\(lowest). Case battery not reported"
     }
 }
 
