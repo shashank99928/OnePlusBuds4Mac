@@ -218,8 +218,14 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   about whether a tone started. Neither the ring nor the stop has been confirmed by ear, so the UI
   asks rather than reports. The frame itself is no longer a guess: see
   [How the phone app does it](#how-the-phone-app-does-it).
-- **Slide → "Volume control".** The label is from the protocol write-up. That a slide changes
-  *volume* rather than scrolling was not measured.
+- **Slide → "Volume control".** The wire carries numbers, not words: `0x07` is the code the
+  reference hardware stores for a slide, and "Volume control" is this app's name for `0x07`, so
+  the label is a naming rather than a reading. What has not been measured is the effect — that a
+  slide moves the Mac's volume rather than scrolling something. Their own app does not do it
+  either: nothing in it touches the system volume or injects a key event, which means the thing
+  that acts on a slide is the platform rather than their UI. Watching the volume while a slide
+  happens is what would settle the label, and it is the one part of this app's gesture naming
+  that a readback cannot check — every code above it was read back off the hardware.
 - **A gesture the phone changes while this app runs.** The SDK models a *push* of the gesture
   table as well as a getter, and the push's record is not the getter's: `UserInteractionEventInfo`
   is five bytes — the same four fields plus a scene — with two-byte options after them. No frame
