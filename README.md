@@ -148,10 +148,15 @@ the views without launching the app.
   `window.png`, `panel.png`, `panel-warming.png` and `panel-disconnected.png` — are recorded in
   `Tests/BudsBarKitTests/SnapshotTests.swift` and compared per pixel against a fresh render.
   They live in the website's asset directory (`docs/assets`) on purpose, so the screenshot a
-  visitor sees is byte-for-byte the one the test verifies. The individual controls the four
-  surfaces never isolate — the Noise-cancellation level row, the case chip, a control channel
-  that has dropped while its last reading is still on screen — have their own goldens in
-  `Tests/Goldens/`, kept out of `docs/assets` because a lone control is not a website asset.
+  visitor sees is the very file the test verifies — one copy, compared pixel for pixel rather
+  than byte for byte, because macOS's PNG encoder does not write the same bytes twice for the
+  same pixels. The individual controls the four surfaces never isolate — the Noise-cancellation
+  level row, the case chip, a control channel that has dropped while its last reading is still
+  on screen, the connect popup — have their own goldens in `Tests/Goldens/`, kept out of
+  `docs/assets` because a lone control is not a website asset. The popup's golden draws its
+  glass capsule as a plain translucent shape instead: `.glassEffect` is a compositor effect that
+  `ImageRenderer` draws as nothing at all, so a golden of the real thing was blank and would
+  have passed forever.
   Regenerate deliberately with `UPDATE_SNAPSHOTS=1 swift test --filter SnapshotTests` and read
   the diff.
 - **A non-zero exit.** `./build.sh` runs `--selfcheck` against the release binary and fails

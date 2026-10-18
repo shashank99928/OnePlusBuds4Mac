@@ -4,11 +4,30 @@ import SwiftUI
 struct FloatingBatteryView: View {
     @Bindable var buds: Buds
 
+    /// `.glassEffect` is a compositor effect, and `ImageRenderer` draws nothing at all for it —
+    /// not the capsule and not the text inside it, so a golden of this card came out blank and
+    /// would have passed forever. While a snapshot is being drawn the capsule is painted as a
+    /// plain translucent shape instead, which is what lets the component goldens pin the
+    /// padding, the cell count and the type that a change would actually break. The app pins
+    /// itself to dark appearance (`NSApp.appearance`), so the substitute is drawn in the light
+    /// the real card always sees. Nothing in a running app enters this branch.
+    @Environment(\.isRenderingSnapshot) private var isSnapshot
+
     var body: some View {
-        content
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .glassEffect(.regular, in: .capsule)
+        card(content
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12))
+    }
+
+    @ViewBuilder
+    private func card<V: View>(_ inner: V) -> some View {
+        if isSnapshot {
+            inner
+                .background(Capsule().fill(Color.white.opacity(0.14)))
+                .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1))
+        } else {
+            inner.glassEffect(.regular, in: .capsule)
+        }
     }
 
     /// True in the instant the popup opens: the link is up but the control channel has not

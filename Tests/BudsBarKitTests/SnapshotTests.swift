@@ -256,6 +256,28 @@ final class SnapshotTests: XCTestCase {
             ) { [self] in
                 onDarkSurface(EarbudControlsSection(buds: seeded(.warmingUp)), padding: 22)
             },
+
+            // The connect popup. It is on screen for a couple of seconds and is the surface
+            // least likely to be looked at by hand, so the branch that can clip — a sentence
+            // inside a capsule, or a third cell appearing when the case reports a charge — is
+            // pinned rather than trusted.
+            ComponentGolden(
+                name: "floating-battery-connected",
+                state: "the popup with both readings in: L, R and no case cell, because the "
+                     + "battery capture carries no case entry",
+                width: 320
+            ) { [self] in
+                onDarkSurface(FloatingBatteryView(buds: seeded(.connected)), padding: 20)
+            },
+
+            ComponentGolden(
+                name: "floating-battery-waiting",
+                state: "the popup in the instant it opens: link up, nothing read, so "
+                     + "\"Reading the battery…\" instead of two dashes",
+                width: 320
+            ) { [self] in
+                onDarkSurface(FloatingBatteryView(buds: seeded(.warmingUp)), padding: 20)
+            },
         ]
     }
 
@@ -364,6 +386,17 @@ final class SnapshotTests: XCTestCase {
         XCTAssertFalse(closed.isControlChannelOpen)
         XCTAssertNotNil(closed.battery.left, "no reading held, so the reconnect wording is wrong")
         XCTAssertNotNil(closed.mode)
+
+        // The popup's two branches: readings in, and the instant before they arrive.
+        let popup = seeded(.connected)
+        XCTAssertNotNil(popup.battery.left, "the popup would draw a dash, not a reading")
+        XCTAssertNotNil(popup.battery.right)
+        XCTAssertNil(popup.battery.enclosure,
+                     "the popup would draw a third cell; the capture carries no case charge")
+        let popupWaiting = seeded(.warmingUp)
+        XCTAssertNil(popupWaiting.battery.left)
+        XCTAssertFalse(popupWaiting.isControlChannelOpen,
+                       "the popup would show dashes where it should say it is reading")
     }
 
     private struct Difference {
