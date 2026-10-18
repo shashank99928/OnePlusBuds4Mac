@@ -198,6 +198,14 @@ enum BudsProtocol {
     }
 
     /// Getter command ids, as used in requests and replies.
+    ///
+    /// Two of these are vocabulary rather than traffic: the app has never sent either, and they
+    /// are here because they are part of the id space it enumerated. `0x0d` is
+    /// `getFeatureSwitchStatus` in the vendor SDK's own labels, and its request is not a bare
+    /// getter — it carries `[count]` and then the feature numbers to ask about, a list their
+    /// per-model server config builds. This app has no screen that would need one, so the id
+    /// stays named and unsent. `0x2f` is named by nothing on their side and has never been asked
+    /// here either; it is kept so the id is not silently the app's own invention.
     enum Command: UInt8 {
         case firmware = 0x05
         case battery = 0x06
