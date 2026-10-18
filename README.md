@@ -207,8 +207,10 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   is no documented delete, so the app reports whether a custom profile exists and does not
   write the buds' flash.
 - **Firmware updates** are out of scope entirely: the OTA path is a separate channel.
-- **The charging bit.** The top bit of a battery byte is treated as "charging" on the strength
-  of one sample. It does not affect the level shown.
+- **The charging bit.** The top bit of a battery byte is treated as "charging" — seen on this
+  hardware once, and named as a mask in the vendor SDK's own `BatteryInfo`
+  (`MASK_CHARGING_STATE = 128`, beside `MASK_BATTERY_LEVEL = 127`), which is the same split this
+  app uses. It does not affect the level shown.
 - **What a rejected write looks like.** A setter is answered with a `0x84` frame carrying the
   setter id and a sequence byte, and those acks are in the corpus. The vendor's parser reads the
   first payload byte as a status — `0` accepted, anything else declined — and every ack in the
@@ -311,6 +313,13 @@ questions the captures could only hint at, and one thing no capture can show.
   getter is SDK command `274` (`0x12`) with an empty payload: sending it exactly as they do got
   the table back — the push's body behind a status byte, the request's sequence echoed — and that
   reply is in the corpus, which is what lets this app poll the table rather than wait to be told.
+- **Their battery record is two bytes, and they sometimes pad it.** The SDK's `BatteryInfo`
+  reads a battery entry as `LENGTH_REMOTE_BATTERY_LEVEL = 2`, masks the level with `127` and the
+  charging flag with `128` — the split this app arrived at from the captures, now with a second
+  opinion for it. One difference worth knowing: before showing a level, their `fixBattery` rounds
+  it **up** to the next multiple of the model's grid (its `batteryRadix`, default `10`), so a byte
+  of `23` is displayed as `30`. Every level this hardware has reported is already a multiple of
+  ten, so the two agree here; this app shows the byte as it came.
 - **The table is read-only because the wire says so.** Their screen can connect and disconnect a
   peer, but that goes through an app-side flow rather than a captured setter: no frame this
   project has seen names a multi-connect slot to change. So this app reports the table and offers
