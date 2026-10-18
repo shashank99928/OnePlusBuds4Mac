@@ -154,11 +154,14 @@ the views without launching the app.
   the self-check used to crash at launch because one hand-written fixture's `len` varint
   disagreed with its own payload-length field, and the parser was right to reject it. Nothing
   enters the corpus except through `Tools/freeze-fixtures.sh` from a real capture.
-- **`swift test`.** 16 tests across two classes — 12 protocol tests and 4 snapshot tests. The
-  checks are tests, not a launch hook: the corpus invariant, the crash as a regression test,
-  the setter ids against the acknowledgements the hardware sends, the property that every
-  mode the UI can offer decodes back to itself, and the property that the self-check *reports*
-  a failure on a degraded corpus rather than trapping on it.
+- **`swift test`.** 18 tests across three classes — 12 protocol tests, 4 snapshot tests and 2
+  documentation tests. The checks are tests, not a launch hook: the corpus invariant, the crash
+  as a regression test, the setter ids against the acknowledgements the hardware sends, the
+  property that every mode the UI can offer decodes back to itself, and the property that the
+  self-check *reports* a failure on a degraded corpus rather than trapping on it. The third class
+  holds the numbers this file and the site state against the code that knows them, because both
+  have drifted: the site still read "23 raw frames captured off the wire" two captures after that
+  was true.
 - **Golden images, at the widths the surfaces really render at.** 340pt is the popover and
   470pt is the window column; if a change makes the noise-control labels clip at either, a
   test fails rather than someone noticing three commits later. The four goldens —
