@@ -386,6 +386,11 @@ questions the captures could only hint at, and one thing no capture can show.
   of its rows.** `WhitelistConfigDTO.Function` is a per-model feature flag set — `spatialTypes`,
   `gameMode`, `whiteNoise`, `adaptiveEar`, `earScan`, `aiClearCall`, `tapLevelSetting`,
   `spineLiveMonitor` and dozens more — fetched for the product id rather than read from the buds.
+  The query built from it says what kind of thing this is: the SDK asks about a feature *by
+  number* — `6` game mode, `11` hearing enhancement, `15` Zen mode, `17` multi-connect, `24` high
+  tone quality, `27` spatial types, `49` adaptive ear, `53` long press volume, `58` sleep
+  detection, `59` head motion are ten of the forty-odd rows that one method adds — and it asks
+  only about the numbers the config turned on. A list for a model, asked one row at a time.
   The commands behind those rows were asked about one at a time on this hardware, each with the
   request the vendor's own SDK sends — for most of them that is an empty payload, the same
   zero-length constant the SDK reuses for its getters. On that request
