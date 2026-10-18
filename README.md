@@ -32,8 +32,9 @@ readback against the hardware, not a display-only imitation.
 - **In-ear detection** — each slot reports whether that bud is in use, resting in the case,
   or being held.
 - **Find my earbuds** — rings the left, the right, or both, and offers a Stop that asks the
-  buds to end the tone. The vendor app has no Stop; the request re-uses the find setter with no
-  earbuds named, and whether the firmware honours it is the one thing a capture cannot show.
+  buds to end the tone. The stop is the vendor's own exit-find request, byte for byte: their app
+  has the command but no control that reaches it, which is why a phone can only wait the tone
+  out. See [How the phone app does it](#how-the-phone-app-does-it).
 - **Earbud controls** — remaps the media touch gestures (double tap, triple tap, touch and
   hold, slide) to what the buds actually support. Only the media context is remappable.
 - **Firmware readout** — the string the earbuds report, shown exactly as they report it: a
@@ -188,10 +189,12 @@ Being explicit about the gaps, so nobody mistakes them for settled:
   no setter for the toggle has ever been seen. The frame is recognised as a notification and
   ignored, the same treatment every unmodelled topic gets, rather than a device list invented
   from a single sample. More captures close this the way the rest of the protocol was closed.
-- **The find-my-earbuds tone.** Ringing is answered with a bare result byte, so no capture shows
-  a tone starting or stopping, and neither the ring nor the stop was confirmed by ear. Stop sends
-  the same allowlisted setter with an empty slot list — the only stop this vocabulary can
-  express — and the UI words it as a request rather than as a fact.
+- **The find-my-earbuds tone.** Ringing is answered with a bare result byte, and so is the stop.
+  Five payload shapes — the vendor's `[0x01]` ring and `[0x00]` stop among them — were put on the
+  wire one at a time, and every one came back `0x8400 len=1 payload=[01]`: the reply says nothing
+  about whether a tone started. Neither the ring nor the stop has been confirmed by ear, so the UI
+  asks rather than reports. The frame itself is no longer a guess: see
+  [How the phone app does it](#how-the-phone-app-does-it).
 - **Slide → "Volume control".** The label is from the protocol write-up. That a slide changes
   *volume* rather than scrolling was not measured.
 - **Custom EQ is read-only.** The upload format has never been transmitted by anyone and there
@@ -201,10 +204,12 @@ Being explicit about the gaps, so nobody mistakes them for settled:
 - **The charging bit.** The top bit of a battery byte is treated as "charging" on the strength
   of one sample. It does not affect the level shown.
 - **What a rejected write looks like.** A setter is answered with a `0x84` frame carrying the
-  setter id and a sequence byte, and those acks are in the corpus — but nothing in the captures
-  separates an accepted write from a rejected one, so the app does not act on them. A write the
-  buds decline is not reported as an error; it appears as the control snapping back to the old
-  value on the next readback, a few seconds later.
+  setter id and a sequence byte, and those acks are in the corpus. The vendor's parser reads the
+  first payload byte as a status — `0` accepted, anything else declined — and every ack in the
+  corpus carries `0`, so that reading is plausible; but the find reply answers `1` to every
+  request, accepted or not, so the app still does not act on an ack. A write the buds decline is
+  not reported as an error; it appears as the control snapping back to the old value on the next
+  readback, a few seconds later.
 - **Which reply wins.** Readbacks carry a sequence byte, but whether a reply echoes the request's
   sequence was never measured, so the app does not use it to discard stale replies. If a slow
   reply lands after a newer one, a control can briefly show the previous value until the next
@@ -234,6 +239,45 @@ the case slot on every poll — so the case's charge is not something this chann
 buds are out of the case, whatever the phone app reads it from. The app still draws a case chip,
 because the wear report is real evidence that a case is there, but it labels that chip "Not
 reported" instead of leaving a dash that reads like a value still loading.
+
+## How the phone app does it
+
+The phone app's own protocol stack is the second opinion this protocol deserves. `HeyMelody`
+(`com.heytap.headset`, 116.9.0, APK SHA-256
+`89368eb2b33abbec1c783b70439679eb0f0a9fea56706999122ab8a3d0ca13b5`) carries its Bluetooth SDK
+in `com.oplus.melody.btsdk`; it was decompiled with JADX to read. Reading it settled a family of
+questions the captures could only hint at, and one thing no capture can show.
+
+- **The two bytes are one 16-bit id.** The SDK's `Packet` parses a body as a 16-bit
+  **little-endian** command id, then a sequence byte, then a 16-bit payload length, then the
+  payload — and bit 15 of the id means "this is a reply". So the byte this app calls `cmd` and
+  the one it calls `messageType` are the low and high halves of a single number, which is what
+  `Frame.opcode` already assumes. The SDK's reply table names the same ids this app derived from
+  the wire: `isFindModeRsp()` is `33792` (`0x8400` — `cmd 0x00`, a `0x84` ack),
+  `isNoiseReductionRsp()` is `33796` (`0x8404`, the corpus's `setack-anc`), and
+  `isSetEqInfoRsp()` is `33816` (`0x8418`).
+- **Find is one command whose payload is on or off.** `HeadsetCoreService` sends SDK command
+  `1024` — `0x0400`, which is `cmd 0x00` with `messageType 0x04` — and its payload is a single
+  byte: `[0x01]` starts the tone, `[0x00]` ends it. Their exit-find state machine reaches that
+  `[0x00]` through `EarphoneRepository.m0(address, false)`. This app's Stop sends the same frame,
+  so the stop is the vendor's own request rather than this project's guess about ringing nothing.
+- **Their tone session is bounded.** Entering find mode arms a three-second timer for the
+  acknowledgement; the tone itself gets a fifty-second timer; a stop-tone event, a dropped
+  connection or leaving the screen ends the session. Starting a tone is refused outright when the
+  wear report says both earbuds are in the case, which is why this app's find section says that
+  too instead of offering a button that cannot do anything.
+- **Why their app has no stop button.** Their completion handler reads the find reply as a status
+  and treats `0` as success. The firmware answers the ack id `0x8400` with the payload `[0x01]`
+  for *every* find request, accepted or not, so the app concludes the ring failed, drops to idle,
+  and never reaches the state that sends the stop — while the tone plays on. That is the
+  behaviour the phone offers, and it is the reason this app has a Stop at all.
+- **What the wire still cannot say.** Five payload shapes were sent to this hardware one at a
+  time — the vendor's `[0x00]` and `[0x01]`, and this app's `[0x01, 0x01]`, `[0x01, 0x02]` and
+  `[0x02, 0x01, 0x02]` — and every one was answered identically with `0x8400 len=1 payload=[01]`.
+  Nothing separates a ring from a stop on the wire. Nor does the vendor's app ever name a single
+  bud: their find call is per-device and their screen has one play button. Per-earbud ringing is
+  therefore this app's extension of the vocabulary, not something the phone does, and whether it
+  and the stop are honoured is settled by ear rather than by a trace.
 
 ## Releasing
 

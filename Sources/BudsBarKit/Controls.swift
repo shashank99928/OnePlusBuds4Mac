@@ -804,16 +804,34 @@ struct FindMyEarbudsSection: View {
 
     private var enabled: Bool { buds.isControlChannelOpen }
 
+    /// True when the wear report says both buds are stowed.
+    ///
+    /// The vendor's app refuses to start a tone in exactly this state (`EarStatusDTO.bothInBox()`
+    /// gates its find screen), and the reason is physical: the tone comes from a bud, and a bud in
+    /// the case is charging. The buttons stay live — what the firmware will do is the firmware's
+    /// decision — but the likeliest reason for a tap that does nothing gets said out loud.
+    private var bothStowed: Bool {
+        buds.placement.left?.isStowed == true && buds.placement.right?.isStowed == true
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Find my earbuds")
                 .font(.system(size: 15, weight: .semibold))
 
-            // The vendor app only rings, and no capture can show whether the firmware acts on a
-            // stop, so the sentence says the earbuds are *asked* rather than promising silence.
+            // Stop is the vendor's own exit-find frame, byte for byte — but the firmware answers
+            // every find request identically, so no trace shows a tone starting or stopping. The
+            // sentence says the earbuds are *asked* rather than promising silence.
             Text("Plays a tone in the earbuds. Stop asks them to end it.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.secondary)
+
+            if bothStowed {
+                Text("Both earbuds are in the case — the phone app won't start a tone "
+                    + "until one comes out.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondary)
+            }
 
             HStack(spacing: 8) {
                 findButton("Left", glyph: "speaker.wave.2.fill",
