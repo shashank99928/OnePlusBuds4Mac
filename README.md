@@ -412,6 +412,14 @@ questions the captures could only hint at, and one thing no capture can show.
   their slider: `MelodyPromptVolumeSeekBarPreference` starts at `barMaxValue = 10` and
   `mOffset = 1`, prints `value × 10%`, and draws a mute icon at `1`, so their screen reads the
   byte as 10%–100%. That is a scale their UI supplies to a number the buds hand over.
+- **The prompt-voice packs are readable, and the write is a file transfer.** `getEarToneData`
+  (`0x0121`) answers with the packs installed on the buds — their parser reads a count and then,
+  per pack, an id, a valid flag, a CRC, a selected flag and the pack's own name — and this
+  hardware's reply carried the name `Enlish`, the buds' spelling rather than a translation. The
+  command next to it is not a picker: `setTone` (`0x0417`) sends
+  `toneFileVertifyInformation.getData()`, verification bytes for a pack file being transferred to
+  the earbuds. Changing the prompt voice is therefore an upload, which puts it in the same box as
+  firmware, and this app shows no row for it rather than a list it could not act on.
 - **Their screen is built from a config their server sends, and this hardware declines several
   of its rows.** `WhitelistConfigDTO.Function` is a per-model feature flag set — `spatialTypes`,
   `gameMode`, `whiteNoise`, `adaptiveEar`, `earScan`, `aiClearCall`, `tapLevelSetting`,
