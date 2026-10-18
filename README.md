@@ -386,13 +386,19 @@ questions the captures could only hint at, and one thing no capture can show.
   of its rows.** `WhitelistConfigDTO.Function` is a per-model feature flag set — `spatialTypes`,
   `gameMode`, `whiteNoise`, `adaptiveEar`, `earScan`, `aiClearCall`, `tapLevelSetting`,
   `spineLiveMonitor` and dozens more — fetched for the product id rather than read from the buds.
-  The commands behind those rows were asked about one at a time on this hardware, and they are
-  not there to be switched: `getHeadsetSpatialType`, `getGameSoundInfo`, `getTapLevelSettingValue`,
-  `getMultiConnectPriorityDevice` and both spine getters answer nothing at all, while
+  The commands behind those rows were asked about one at a time on this hardware, each with the
+  request the vendor's own SDK sends — for most of them that is an empty payload, the same
+  zero-length constant the SDK reuses for its getters. On that request
+  `getHeadsetSpatialType` (`0x012a`), `getGameSoundInfo` (`0x012b`), `getTapLevelSettingValue`
+  (`0x0133`) and `getSpineCalibratedState` (`0x0129`) answer nothing at all, while
   `getHearingEnhancementData` and its filter data, `getEarBudsZenModeInformation` and
   `getFreeDialogRecoveryTime` answer a bare `01` — the status byte for a command the firmware
-  declines. That is the honest reason this app's window has fewer switches than the phone's: the
-  phone is drawing a list for the model, and this app can only offer what the model does.
+  declines. Two others are not evidence either way, because the request was the wrong shape:
+  `getMultiConnectPriorityDevice` (`0x0132`) takes one byte, `1` or `2` as their SDK sends it, and
+  `getSpineHistoryData` (`0x0126`) takes two four-byte values — those two were asked without
+  their argument and stayed quiet, which says nothing until they are asked again properly. That
+  is the honest reason this app's window has fewer switches than the phone's: the phone is
+  drawing a list for the model, and this app can only offer what the model does.
 - **The status byte is an answer, not a formality.** A reply leads with `00` when it carries a
   body and `01` when the firmware is declining — both values measured, the second on the four
   getters above. So every decoder here only reads past a `00`: `[01 03]` is a refusal, not a

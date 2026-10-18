@@ -171,7 +171,7 @@ final class ProtocolTests: XCTestCase {
         XCTAssertNil(BudsProtocol.Codec(rawValue: 0x09))
     }
 
-    /// The status byte: a reply only decodes past a `00`. This is not hypothetical — six of the
+    /// The status byte: a reply only decodes past a `00`. This is not hypothetical — four of the
     /// getters the vendor's SDK names answer a bare `01` on this hardware, so a decoder that
     /// skimmed the byte off would read `[01 03]` as a counted table of three records.
     func testADeclinedReplyDecodesToNothing() throws {

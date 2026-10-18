@@ -802,7 +802,7 @@ enum BudsProtocol {
     /// The status byte a reply leads with, and the only value a decoder here will read past.
     ///
     /// `00` is a reply that carries an answer; `01` is the firmware declining the command.
-    /// Both were measured: every getter this app sends answers `00`, and six of the getters the
+    /// Both were measured: every getter this app sends answers `00`, and four of the getters the
     /// vendor's SDK names — hearing enhancement, its filter data, Zen mode, free-dialog recovery
     /// time (`0x0115`, `0x0116`, `0x0119`, `0x011d`) — answer a bare `01` instead of a body.
     /// Reading past the status would take `[01 03]` for three records, so a declined reply
