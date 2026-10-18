@@ -391,6 +391,11 @@ questions the captures could only hint at, and one thing no capture can show.
   tone quality, `27` spatial types, `49` adaptive ear, `53` long press volume, `58` sleep
   detection, `59` head motion are ten of the forty-odd rows that one method adds — and it asks
   only about the numbers the config turned on. A list for a model, asked one row at a time.
+  The answer is the same shape — `[count]` and then one `[number][status]` pair per feature, with
+  `0` read as off, `1` as on and anything else as a third state — and their code turns those
+  numbers back into names: `4` wear detection, `6` game mode, `15` Zen mode, `17` multi-connect,
+  `24` high quality audio, `27` spatial sound, `39` game sound. So the phone's feature screen is
+  numbers on the wire, chosen by a config, and the buds only ever answer about the ones asked.
   The commands behind those rows were asked about one at a time on this hardware, each with the
   request the vendor's own SDK sends — for most of them that is an empty payload, the same
   zero-length constant the SDK reuses for its getters. On that request
